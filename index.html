@@ -368,6 +368,56 @@
   .iso-row input[type=range]{ flex:1; accent-color:#1c5cab; }
   .iso-row b{ min-width:52px; text-align:right; font-variant-numeric:tabular-nums; }
   .iso-sum{ font-size:13px; margin:6px 0 10px; }
+  /* --- chip zasięgu na mapie (prawy górny róg): widać, że zasięg jest włączony, ✕ go wyłącza --- */
+  .iso-chip{
+    display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px;
+    font:600 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background:var(--paper-raised); color:#184f95; border:1px solid color-mix(in srgb, #1c5cab 35%, var(--line));
+    box-shadow:0 2px 10px rgba(28,28,26,.18);
+  }
+  .iso-chip[hidden]{ display:none; }
+  .iso-chip button{
+    font:inherit; color:inherit; background:transparent; border:0; cursor:pointer;
+    height:30px; min-width:30px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; gap:6px;
+  }
+  .iso-chip button:hover{ background:color-mix(in srgb, #1c5cab 12%, transparent); }
+  .iso-chip button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .iso-chip.on{ background:#184f95; color:#fff; border-color:#184f95; }
+  .iso-chip.on button:hover{ background:rgba(255,255,255,.16); }
+  .iso-chip .ic-t{ font-variant-numeric:tabular-nums; min-width:58px; padding:0 2px; text-align:center; white-space:nowrap; }
+  .iso-chip button:disabled{ opacity:.4; cursor:default; background:transparent; }
+  .iso-chip .ic-ctx{ font-weight:400; opacity:.85; font-size:12px; }
+  .iso-chip .ic-step{ font-size:17px; padding:0; width:30px; }
+  .iso-chip .ic-x{ padding:0; width:30px; font-size:15px; }
+  .iso-chip .ic-sep{ width:1px; height:18px; background:rgba(255,255,255,.3); margin:0 2px; }
+  @media (max-width: 760px){ .iso-chip .ic-ctx{ display:none; } }
+  /* --- dymek przy celu: czas + "Sprawdź to miejsce" (nowy start jednym kliknięciem) --- */
+  .target-pop .leaflet-popup-content-wrapper{ border-radius:12px; box-shadow:0 4px 18px rgba(28,28,26,.22); }
+  .target-pop .leaflet-popup-content{ margin:11px 14px 12px; font-size:13px; line-height:1.4; min-width:180px; }
+  .target-pop a.leaflet-popup-close-button{ top:4px; right:4px; width:24px; height:24px; font-size:18px; line-height:22px; color:var(--ink-soft); }
+  .tp-t{ font-size:15px; padding-right:18px; }
+  .tp-t b{ color:#184f95; font-size:17px; font-variant-numeric:tabular-nums; }
+  .tp-t span{ color:var(--ink-soft); font-size:12.5px; }
+  .tp-name{ color:var(--ink-soft); font-size:12px; margin-top:2px; }
+  .tp-go{
+    margin-top:9px; width:100%; font:inherit; font-size:13px; font-weight:600; cursor:pointer;
+    padding:8px 10px; border-radius:9px; border:0; background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .tp-go:hover{ background:color-mix(in srgb, var(--accent) 88%, #000); }
+  .tp-go:focus-visible{ outline:2px solid #184f95; outline-offset:2px; }
+  #map.tpop-open .term-label.tgt-time{ display:none; }
+  /* --- powrót do poprzedniego miejsca --- */
+  .back-place{
+    display:flex; align-items:center; gap:6px; max-width:100%; margin:0 0 10px; padding:5px 10px 5px 8px;
+    font:inherit; font-size:12.5px; color:var(--ink-soft); cursor:pointer;
+    background:var(--paper); border:1px solid var(--line); border-radius:999px;
+  }
+  .back-place[hidden]{ display:none; }
+  .back-place span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .back-place b{ color:var(--ink); font-weight:600; }
+  .back-place:hover{ border-color:color-mix(in srgb, var(--accent) 50%, var(--line)); color:var(--ink); }
+  .back-place:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   .iso-sum b{ font-variant-numeric:tabular-nums; }
   .iso-legend{ display:grid; grid-template-columns:14px 1fr auto; gap:5px 8px; align-items:center; font-size:12px; }
   .iso-legend i{ width:14px; height:14px; border-radius:4px; display:block; }
@@ -563,6 +613,7 @@
     <div class="loading-pill" id="loading"><i></i><span>Wczytuję rozkład…</span></div>
     <div id="panel">
       <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false">Więcej</button>
+      <button type="button" class="back-place" id="back-place" hidden></button>
       <h2 id="panel-title">Wybierz miejsce na mapie</h2>
       <p class="sub" id="panel-sub"></p>
       <div class="notice" id="notice" hidden></div>
@@ -885,7 +936,7 @@ document.getElementById('results').addEventListener('click', (e) => {
   if (dst) { const d = destById(dst.dataset.dest); if (d) setTarget(d.lat, d.lon, d.name, true); return; }
   if (e.target.closest('[data-pick-target]')) { setPicking(!pickingTarget); return; }
   if (e.target.closest('[data-target-clear]')) { clearTarget(); return; }
-  if (e.target.closest('[data-target-origin]')) { if (target) { const ll = L.latLng(target.lat, target.lon); clearTarget(); selectPoint(ll); } return; }
+  if (e.target.closest('[data-target-origin]')) { targetAsOrigin(); return; }
   if (e.target.closest('[data-target-save]')) { renderTargetBox(true); return; }
   if (e.target.closest('[data-target-save-ok]')) { saveTargetAsPlace(); return; }
   if (e.target.closest('[data-target-save-cancel]')) { renderTargetBox(false); return; }
@@ -909,7 +960,8 @@ document.getElementById('results').addEventListener('click', (e) => {
   if (iat) { isoTime = +iat.dataset.isoAt; computeIso(); return; }
   const isoBtn = e.target.closest('[data-iso]');
   if (isoBtn) {
-    if (isoBtn.dataset.iso === 'on') computeIso(); else { clearIso(); renderIsoBox(); syncURL(true); }
+    if (isoBtn.dataset.iso === 'on') computeIso().then(() => document.querySelector('#iso-box .iso-row')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    else { clearIso(); renderIsoBox(); syncURL(true); }
     return;
   }
   if (e.target.closest('[data-board-more]')) { boardLimit = Math.max(boardLimit, 8) + 16; renderBoard(); return; }
@@ -1338,6 +1390,19 @@ function initMap() {
     },
   });
   new Legend().addTo(map);
+  const IsoChip = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd() {
+      const el = L.DomUtil.create('div', 'iso-chip');
+      el.hidden = true;
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+      el.addEventListener('click', onIsoChip);
+      isoChipEl = el;
+      return el;
+    },
+  });
+  new IsoChip().addTo(map);
 
   stopMarkers = STOPS.map(s => {
     const m = L.circleMarker([s.lat, s.lon], { ...baseStopStyle(s), bubblingMouseEvents: false }).addTo(map);
@@ -1358,6 +1423,10 @@ function initMap() {
   const fitMinZoom = () => map.setMinZoom(Math.max(8, map.getBoundsZoom(dataBounds, false)));
   fitMinZoom();
   map.on('resize', fitMinZoom);
+  map.on('resize', () => {
+    const o = isoOrigin();
+    if (o && !map.getBounds().pad(-0.15).contains([o.lat, o.lon])) map.panTo([o.lat, o.lon], { animate: false });
+  });
 
   radiusInput.addEventListener('input', () => setRadius(parseInt(radiusInput.value, 10), true));
 
@@ -1366,7 +1435,7 @@ function initMap() {
   // Klik w mapę: w trybie zasięgu (albo po "Wskaż cel") wskazuje cel podróży, inaczej wybiera nowe miejsce.
   // Każdy klik coś robi — nie ma kliknięć, które tylko chowają poprzedni widok.
   map.on('click', (e) => {
-    if (targetClickMode()) { setTarget(e.latlng.lat, e.latlng.lng, null, false); return; }
+    if (targetClickMode()) { setTarget(e.latlng.lat, e.latlng.lng, null, false, { pop: true }); return; }
     if (selectedRouteKey) selectRoute(selectedRouteKey);
     selectPoint(e.latlng);
   });
@@ -1374,8 +1443,11 @@ function initMap() {
   const zoomCls = () => map.getContainer().classList.toggle('z-lo', map.getZoom() < 16);
   zoomCls();
   map.on('zoomend', () => { restyleStops(); zoomCls(); if (selectedRouteKey) styleVariants(); });   // kropki i trasa rosną z przybliżeniem
+  // dotyk: przeglądarka dosyła po stuknięciu sztuczny mousemove — bez hovera (na telefonie jest dymek)
+  let lastTouch = 0;
+  map.getContainer().addEventListener('touchstart', () => { lastTouch = Date.now(); }, { passive: true });
   map.on('mousemove', e => {
-    if (!iso || !iso.walk) return;
+    if (!iso || !iso.walk || Date.now() - lastTouch < 1000) return;
     cancelAnimationFrame(pointRaf);
     pointRaf = requestAnimationFrame(() => pointHover(e.latlng));
   });
@@ -1398,7 +1470,7 @@ function stopMouseOut(s) {
 function stopClicked(s) {
   hoverMute = s.name;
   hideStopHover();
-  if (targetClickMode()) { setTarget(s.lat, s.lon, s.name, false); return; }
+  if (targetClickMode()) { setTarget(s.lat, s.lon, s.name, false, { pop: true, stopId: s.id }); return; }
   selectStop(s);
 }
 function showStopHover(s) {
@@ -2173,6 +2245,60 @@ function setIsoT(T) {
   iso.T = T;
   iso.bands = isoBands(T);
   if (iso.walk && isoLayer && isoLayer.redraw) isoLayer.redraw(); else drawIso();
+  renderIsoChip();
+}
+// zmiana czasu z chipa (− / +): przerysuj, odśwież statystyki w panelu i adres
+function applyIsoT(T) {
+  if (!iso) return;
+  isoT = Math.max(10, Math.min(60, T));
+  setIsoT(isoT);
+  renderIsoBox();
+  fitIsoView();
+  syncURL(false);
+}
+
+// ---------------------------------------------------------------------------
+// Chip zasięgu na mapie (prawy górny róg). Wyłączony: „◎ Zasięg 20 min” włącza zasięg.
+// Włączony: typ dnia / godzina, − 20 min +, ✕ (wyłącza, jak Esc). Widać go bez przewijania panelu,
+// więc zawsze wiadomo, że klik w mapę pokazuje czas dojazdu (dymek), a nie tylko wybiera miejsce.
+// ---------------------------------------------------------------------------
+let isoChipEl = null, hasHwCache = null;
+const hasHeadways = () => hasHwCache ?? (hasHwCache = Object.values(ROUTES).some(r => (r.trips || []).some(t => t && t.hw)));
+const ISO_ICON = `<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>`;
+const DAY_SHORT = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela' };
+function renderIsoChip() {
+  const el = isoChipEl;
+  if (!el) return;
+  const o = iso ? iso.o : isoOrigin();
+  if (!o || !hasHeadways()) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.classList.toggle('on', !!iso);
+  if (!iso) {
+    el.innerHTML = `<button type="button" data-chip="on" title="Pokaż, gdzie dojedziesz w ${isoT} min">${ISO_ICON}Zasięg ${isoT} min</button>`;
+    return;
+  }
+  const ctx = iso.mode === 'time' ? `wyjście ${fmt(isoTime)}` : DAY_SHORT[isoDay] || '';
+  el.innerHTML = `<button type="button" data-chip="edit" title="Ustawienia zasięgu w panelu">${ISO_ICON}<span class="ic-ctx">${esc(ctx)}</span></button>`
+    + `<button type="button" class="ic-step" data-chip="-" aria-label="Krócej o 5 min"${iso.T <= 10 ? ' disabled' : ''}>−</button>`
+    + `<span class="ic-t" aria-live="polite">${iso.T} min</span>`
+    + `<button type="button" class="ic-step" data-chip="+" aria-label="Dłużej o 5 min"${iso.T >= 60 ? ' disabled' : ''}>+</button>`
+    + `<i class="ic-sep" aria-hidden="true"></i>`
+    + `<button type="button" class="ic-x" data-chip="off" title="Wyłącz zasięg (Esc)" aria-label="Wyłącz zasięg">✕</button>`;
+}
+function onIsoChip(e) {
+  // chip przerysowuje się w trakcie kliknięcia; bez tego Leaflet nie widzi, że klik był w kontrolce, i ustawia cel
+  L.DomEvent.stopPropagation(e);
+  const b = e.target.closest('[data-chip]');
+  if (!b || b.disabled) return;
+  const a = b.dataset.chip;
+  if (a === 'on') computeIso();
+  else if (a === 'off') { clearIso(); renderIsoBox(); syncURL(true); }
+  else if (a === '-' || a === '+') applyIsoT((iso ? iso.T : isoT) + (a === '+' ? 5 : -5));
+  else if (a === 'edit') {
+    const lay = document.getElementById('layout');
+    if (window.matchMedia('(max-width: 760px)').matches && !lay.classList.contains('expanded')) panelToggle.click();
+    document.getElementById('iso-box')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
 }
 
 async function computeIso() {
@@ -2250,6 +2376,7 @@ function clearIso() {
   if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
   if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
   if (was) { restyleStops(); renderTargetBox(); }
+  renderIsoChip();
 }
 
 // najlepszy (najszybszy) słupek o tej nazwie — czas dotarcia do przystanku
@@ -2363,6 +2490,7 @@ function legLayers(legs, tail, C = iso) {
 }
 
 function renderIsoBox() {
+  renderIsoChip();
   const box = document.getElementById('iso-box');
   if (!box) return;
   const o = iso ? iso.o : isoOrigin();
@@ -2426,14 +2554,14 @@ function renderIsoBox() {
     : `Typowy dzień (${DAY_NAMES[isoDay]}), 6:00–20:00. Wliczam średnie czekanie na przystanku (połowa odstępu kursów)${WALK ? ', dojście i przesiadki pieszo po ulicach i ścieżkach z OpenStreetMap, 4,5 km/h' : ` i przesiadki pieszo do ${WALK_MAX} m, w przybliżeniu (linia prosta × 1,3)`}.`;
 
   box.innerHTML = `<div class="iso-card">
-    <div class="iso-top"><h3>Zasięg: ${esc(o.name)}</h3><button type="button" class="link-btn" data-iso="off">Wyłącz</button></div>
+    <div class="iso-top"><h3>Zasięg ${o.point ? 'z zaznaczonego miejsca' : `z przystanku ${esc(o.name)}`}</h3><button type="button" class="link-btn" data-iso="off" title="Wyłącz zasięg (Esc)">Wyłącz</button></div>
     ${modeHtml}${paramsHtml}
     <div class="iso-row"><label for="iso-t">Czas</label><input type="range" id="iso-t" min="10" max="60" step="5" value="${iso.T}"><b>${iso.T} min</b></div>
     <div class="iso-sum">${anyRide ? 'Dojedziesz' : 'Dojdziesz pieszo'} do <b>${reached.length}</b> ${reached.length === 1 ? 'przystanku' : 'przystanków'}, najdalej ${far.length ? km(far[0].d) : '—'} w linii prostej.</div>
     ${tm && iso.rides === 0 ? '<div class="iso-next" id="iso-next">Sprawdzam najbliższy odjazd…</div>' : ''}
     <div class="iso-legend">${iso.bands.map((b, i) =>
       `<i style="background:${b.color}"></i><span>${b.lo}–${b.hi} min</span><span>${counts[i]} przyst.</span>`).join('')}</div>
-    <div class="iso-next" style="margin:10px 0 0"><b>Kliknij cel na mapie</b> — pokażę, jak tam dojechać${COARSE ? '' : ' (albo tylko najedź kursorem)'}. Żeby zmienić start, przeciągnij pinezkę.</div>
+    <div class="iso-next" style="margin:10px 0 0"><b>Kliknij miejsce na mapie</b> — pokażę czas i trasę${COARSE ? '' : ' (albo tylko najedź kursorem)'}, a „Sprawdź to miejsce” w dymku zrobi z niego nowy start. Zasięg zostaje włączony.</div>
     <div class="muted" style="margin-top:10px">${note}</div>
   </div>`;
   const inp = document.getElementById('iso-t');
@@ -2548,6 +2676,9 @@ function routeTo(C, lat, lon, R = 200) {
 }
 function pointHover(ll) {
   if (!iso || !iso.walk || stopHoverOn) return hidePointHover();
+  // przy otwartym dymku celu karta hovera w tym samym miejscu tylko by go dublowała
+  if (target && targetPop && targetPop.isOpen()
+      && map.latLngToContainerPoint([target.lat, target.lon]).distanceTo(map.latLngToContainerPoint(ll)) < 90) return hidePointHover();
   const r = routeTo(iso, ll.lat, ll.lng, 150);
   if (!r || !(r.t <= iso.T)) return hidePointHover();
   const t = r.t, legs = r.legs;
@@ -2599,15 +2730,65 @@ function hotPole(c) {
   poleEls.forEach((el, k) => el && el.classList.toggle('hot', !!c && k === c));
 }
 
+// ---------------------------------------------------------------------------
+// Poprzednie miejsca startu: „← Wróć do: …” nad tytułem panelu. Przy porównywaniu dwóch okolic
+// (tu 39 min, tam 24 min) wystarczy jedno kliknięcie. Zasięg i cel zostają.
+// ---------------------------------------------------------------------------
+const placeHist = [];
+let restoringPlace = false;
+function currentPlace() {
+  if (stopMode) return { stopId: stopMode.id, lat: stopMode.lat, lon: stopMode.lon, name: stopMode.name };
+  if (radiusCircle) {
+    const c = radiusCircle.getLatLng(), n = nearestStopName(c.lat, c.lng);
+    return { lat: c.lat, lon: c.lng, name: n ? `okolice: ${n}` : 'poprzednie miejsce' };
+  }
+  return null;
+}
+const samePlaceRec = (a, b) => !!(a && b) && (a.stopId && b.stopId ? a.stopId === b.stopId || a.name === b.name
+  : a.stopId || b.stopId ? false : haversineMeters(a.lat, a.lon, b.lat, b.lon) < 15);
+// next = miejsce, które zaraz zostanie wybrane (to samo miejsce nie trafia do historii)
+function rememberPlace(next) {
+  if (applyingState || restoringPlace) return;
+  const cur = currentPlace();
+  if (!cur || (next && samePlaceRec(cur, next))) return;
+  if (samePlaceRec(placeHist[placeHist.length - 1], cur)) return;
+  placeHist.push(cur);
+  if (placeHist.length > 20) placeHist.shift();
+}
+function renderBackPlace() {
+  const el = document.getElementById('back-place');
+  if (!el) return;
+  const cur = currentPlace();
+  while (placeHist.length && samePlaceRec(placeHist[placeHist.length - 1], cur)) placeHist.pop();
+  const prev = placeHist[placeHist.length - 1];
+  el.hidden = !prev;
+  el.innerHTML = prev ? `<span aria-hidden="true">←</span><span>Wróć do: <b>${esc(prev.name)}</b></span>` : '';
+  el.title = prev ? 'Poprzednie miejsce startu (zasięg i cel zostają)' : '';
+}
+function backToPlace() {
+  const p = placeHist.pop();
+  if (!p) return;
+  const st = p.stopId && STOP_BY_ID.get(p.stopId);
+  restoringPlace = true;
+  try {
+    if (selectedRouteKey) selectRoute(selectedRouteKey);
+    if (st) selectStop(st); else selectPoint(L.latLng(p.lat, p.lon));
+  } finally { restoringPlace = false; }
+  renderBackPlace();
+  if (!map.getBounds().pad(-0.15).contains([p.lat, p.lon])) map.panTo([p.lat, p.lon]);
+}
+document.getElementById('back-place').addEventListener('click', backToPlace);
+
 // Pinezka startu da się przeciągnąć: puszczenie = nowe miejsce (włączony zasięg się przelicza)
 function addOriginMarker(latlng) {
   clickMarker = L.marker(latlng, { icon: clickIcon, draggable: true, keyboard: false, title: 'Przeciągnij, żeby zmienić miejsce', bubblingMouseEvents: false }).addTo(map);
-  clickMarker.on('dragstart', () => { hideStopHover(); hidePointHover(); });
+  clickMarker.on('dragstart', () => { hideStopHover(); hidePointHover(); rememberPlace(); });
   clickMarker.on('drag', e => { if (radiusCircle) radiusCircle.setLatLng(e.target.getLatLng()); });
-  clickMarker.on('dragend', e => { if (selectedRouteKey) selectRoute(selectedRouteKey); selectPoint(e.target.getLatLng()); });
+  clickMarker.on('dragend', e => { if (selectedRouteKey) selectRoute(selectedRouteKey); selectPoint(e.target.getLatLng(), { remembered: true }); });
 }
 
-function selectPoint(latlng) {
+function selectPoint(latlng, opts = {}) {
+  if (!opts.remembered) rememberPlace({ lat: latlng.lat, lon: latlng.lng });
   const keepIso = !!iso;
   clearIso();
   showNotice('');
@@ -2621,6 +2802,7 @@ function selectPoint(latlng) {
   }).addTo(map);
   recompute(latlng);
   document.getElementById('panel').scrollTop = 0;
+  renderBackPlace();
   syncURL(true);
   if (keepIso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego miejsca
 }
@@ -2642,6 +2824,7 @@ function highlightStops(ids, unreach = new Set()) {
 
 // Klik w przystanek: bierzemy wszystkie słupki o tej nazwie w promieniu 400 m
 function selectStop(s) {
+  rememberPlace({ stopId: s.id, name: s.name });
   const poles = STOPS
     .filter(x => x.name === s.name)
     .map(x => ({ ...x, dist: haversineMeters(s.lat, s.lon, x.lat, x.lon) }))
@@ -2662,6 +2845,7 @@ function selectStop(s) {
   }
   renderStopPanel();
   document.getElementById('panel').scrollTop = 0;
+  renderBackPlace();
   syncURL(true);
   if (iso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego przystanku
 }
@@ -2840,6 +3024,8 @@ function showEmpty() {
   document.getElementById('panel-sub').textContent = '';
   document.getElementById('results').innerHTML = EMPTY_HTML;
   showNotice('');
+  renderIsoChip();
+  renderBackPlace();
   announce();
 }
 async function applyState() {
@@ -2855,6 +3041,7 @@ async function applyState() {
     if (cel.length === 2 && cel.every(Number.isFinite)) {
       if (!target || Math.abs(target.lat - cel[0]) > 1e-5 || Math.abs(target.lon - cel[1]) > 1e-5) target = { lat: cel[0], lon: cel[1], label: null };
     } else target = null;
+    targetPopOn = false;   // po „Wstecz” / z linku: cel bez dymka
     // widok: miejsce ma być wyraźnie w środku mapy, nie przy krawędzi
     const inView = ll => map.getBounds().pad(-0.2).contains(ll);
     const s = p.get('s') && STOP_BY_ID.get(p.get('s'));
@@ -3265,9 +3452,11 @@ function nearestStopName(lat, lon) {
   STOPS.forEach(s => { const d = haversineMeters(lat, lon, s.lat, s.lon); if (d < 600 && (!best || d < best.d)) best = { d, s }; });
   return best ? best.s.name : null;
 }
-function setTarget(lat, lon, label, fromList) {
+// opts.pop = dymek przy celu (klik w mapę), opts.stopId = cel to przystanek ("Sprawdź" otworzy przystanek)
+function setTarget(lat, lon, label, fromList, opts = {}) {
   const mine = myPlaces.find(p => samePlace(p, { lat, lon })) || DESTS.find(p => samePlace(p, { lat, lon }));
-  target = { lat, lon, label: label || (mine && mine.name) || null };
+  target = { lat, lon, label: label || (mine && mine.name) || null, stopId: opts.stopId || null };
+  targetPopOn = !!opts.pop;
   setPicking(false);
   renderTargetBox();
   renderPlaceCard();
@@ -3276,10 +3465,19 @@ function setTarget(lat, lon, label, fromList) {
   const o = isoOrigin();
   const b = L.latLngBounds([[lat, lon]].concat(o ? [[o.lat, o.lon]] : []));
   if (!map.getBounds().pad(-0.1).contains(b)) map.fitBounds(b, { padding: [60, 60], maxZoom: map.getZoom() });
-  document.getElementById('target-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if (!targetPopOn) document.getElementById('target-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+// Cel staje się nowym startem (zasięg zostaje włączony). Przystanek otwiera się jako przystanek.
+function targetAsOrigin() {
+  if (!target) return;
+  const t = target, st = t.stopId && STOP_BY_ID.get(t.stopId);
+  clearTarget();
+  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  if (st) selectStop(st); else selectPoint(L.latLng(t.lat, t.lon));
 }
 function clearTarget() {
   target = null;
+  targetPopOn = false;
   renderTargetBox();
   renderPlaceCard();
   syncURL(true);
@@ -3292,18 +3490,70 @@ function drawTarget(r, C) {
   const pin = L.marker([target.lat, target.lon], { icon: targetIcon, interactive: false, keyboard: false, zIndexOffset: 500 });
   // czas dojazdu przy samej pinezce — widać go bez szukania w panelu
   if (r) pin.bindTooltip(ok ? `${Math.max(1, Math.round(r.t))} min` : `> ${C && C.mode === 'time' ? ISO_TMAX : REACH_T} min`,
-    { permanent: true, direction: 'right', offset: [12, -18], className: 'term-label' });
+    { permanent: true, direction: 'right', offset: [12, -18], className: 'term-label tgt-time' });
   parts.push(pin);
   targetLayer = L.layerGroup(parts).addTo(map);
 }
+// Dymek przy celu (po kliknięciu w mapę): czas dojazdu i "Sprawdź to miejsce" = nowy start jednym kliknięciem.
+// Dzięki temu klik w mapę przy włączonym zasięgu nie jest zagadką (cel czy nowe miejsce?) — pytamy na miejscu.
+let targetPopOn = false, targetPop = null, targetPopSync = false;
+function renderTargetPop(r, C, name) {
+  const want = targetPopOn && target && map && isoOrigin();
+  if (!want) { closeTargetPop(); return; }
+  const horizon = C && C.mode === 'time' ? ISO_TMAX : REACH_T;
+  let head;
+  if (!C) head = '<span>Liczę trasę…</span>';
+  else if (!r || !isFinite(r.t)) head = `<b>ponad ${horizon} min</b>`;
+  else {
+    const extra = [];
+    if (r.rides > 1) extra.push(`${r.rides - 1} ${plural(r.rides - 1, 'przesiadka', 'przesiadki', 'przesiadek')}`);
+    else if (r.rides === 1) extra.push(esc(r.lines[0].ref));
+    if (!r.rides) extra.push('pieszo');
+    head = `<b>${Math.max(1, Math.round(r.t))} min</b> stąd${extra.length ? ` <span>· ${extra.join(' · ')}</span>` : ''}`;
+  }
+  const html = `<div class="tp-t">${head}</div><div class="tp-name">${esc(name)}</div>
+    <button type="button" class="tp-go" data-pop-origin="1">${target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce'}</button>`;
+  if (!targetPop) {
+    targetPop = L.popup({ className: 'target-pop', offset: [0, -30], autoPanPadding: [40, 40], maxWidth: 260, closeOnEscapeKey: false });
+    targetPop.on('remove', () => {
+      map.getContainer().classList.remove('tpop-open');
+      if (!targetPopSync) targetPopOn = false;   // zamknięty przez użytkownika (×) — cel zostaje
+    });
+    // nasłuch na samym dymku: przycisk znika w trakcie kliknięcia, klik nie może dojść do mapy
+    targetPop.on('add', () => {
+      const el = targetPop.getElement();
+      if (!el || el._tpBound) return;
+      el._tpBound = true;
+      el.addEventListener('click', e => {
+        if (!e.target.closest('[data-pop-origin]')) return;
+        L.DomEvent.stopPropagation(e);
+        targetAsOrigin();
+      });
+    });
+  }
+  hidePointHover();
+  targetPopSync = true;
+  const moved = !targetPop.isOpen() || !targetPop.getLatLng() || !targetPop.getLatLng().equals(L.latLng(target.lat, target.lon));
+  targetPop.setLatLng([target.lat, target.lon]).setContent(html);
+  if (!targetPop.isOpen()) targetPop.openOn(map); else if (moved) targetPop.update();
+  targetPopSync = false;
+  map.getContainer().classList.add('tpop-open');
+}
+function closeTargetPop() {
+  if (!targetPop || !targetPop.isOpen()) return;
+  targetPopSync = true;
+  map.closePopup(targetPop);
+  targetPopSync = false;
+}
 function renderTargetBox(saving = false) {
   const el = document.getElementById('target-box');
-  if (!target) { drawTarget(); if (el) el.innerHTML = ''; return; }
+  if (!target) { drawTarget(); closeTargetPop(); if (el) el.innerHTML = ''; return; }
   const C = targetCtx(), o = isoOrigin();
   const r = C && o ? routeTo(C, target.lat, target.lon) : null;
   drawTarget(r, C);
-  if (!el) return;
   const name = target.label || (nearestStopName(target.lat, target.lon) ? `okolice: ${nearestStopName(target.lat, target.lon)}` : 'wskazane miejsce');
+  renderTargetPop(r, C, name);
+  if (!el) return;
   let body;
   const horizon = C && C.mode === 'time' ? ISO_TMAX : REACH_T;
   if (!o) body = '<div class="muted">Wybierz miejsce startu na mapie.</div>';
@@ -3323,7 +3573,7 @@ function renderTargetBox(saving = false) {
     ? `<input id="place-name" type="text" maxlength="40" value="${esc(target.label || nearestStopName(target.lat, target.lon) || '')}" placeholder="Nazwa, np. Praca" aria-label="Nazwa miejsca">
        <button type="button" class="chip on" data-target-save-ok="1">Zapisz</button><button type="button" class="link-btn" data-target-save-cancel="1">Anuluj</button>`
     : (saved ? '' : '<button type="button" class="link-btn" data-target-save="1">★ Zapisz jako moje miejsce</button>')
-      + (o ? '<button type="button" class="link-btn" data-target-origin="1">Licz stąd</button>' : '');
+      + (o ? `<button type="button" class="link-btn" data-target-origin="1">${target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce'}</button>` : '');
   el.innerHTML = `<div class="target-box">
     <div class="tb-top"><div class="tb-name">Cel: <b>${esc(name)}</b></div><button type="button" class="link-btn" data-target-clear="1" aria-label="Usuń cel">Usuń cel</button></div>
     ${body}<div class="tb-actions">${actions}</div></div>`;

@@ -13,8 +13,11 @@ Funkcje:
   - czasy dojazdu do stałych celów `DESTS` i „Moich miejsc” (`localStorage` `mapa.mojeMiejsca`), model „typowy dzień”,
   - typ dnia (`#day-type`, domyślnie dzień roboczy) jest wspólny z częstotliwością i zasięgiem „typowy dzień” (`setDayType`).
 - **Linie:** nocne w osobnej grupie (`isNight`: żaden wariant nie ma `hw*`, w danych ZTP to 6xx, 9xx, 62, 69) i poza licznikiem w tytule; przy numerze „co X min” (`hwText`, odstęp z najczęściej obsługiwanego słupka w 6–20).
-- **Cel podróży** (`target`, `setTarget`, `renderTargetBox`, `drawTarget`): klik na mapie lub w przystanek w trybie zasięgu albo po „Wskaż własny cel”, wiersz listy celów, link `cel=`. Trasa z `routeTo` (kontekst `iso`, jeśli włączony, inaczej `reach`), czas przy pinezce. „Zapisz jako moje miejsce”, „Licz stąd”.
+- **Cel podróży** (`target`, `setTarget`, `renderTargetBox`, `drawTarget`): klik na mapie lub w przystanek w trybie zasięgu albo po „Wskaż własny cel”, wiersz listy celów, link `cel=`. Trasa z `routeTo` (kontekst `iso`, jeśli włączony, inaczej `reach`), czas przy pinezce. „Zapisz jako moje miejsce”, „Sprawdź to miejsce” (`targetAsOrigin`: cel staje się startem, zasięg zostaje; cel-przystanek otwiera się jako przystanek, `target.stopId`).
+  - **Dymek przy celu** (`renderTargetPop`, `targetPopOn`): po kliknięciu w mapę lub przystanek pokazuje czas, linię / przesiadki i przycisk „Sprawdź to miejsce” (nowy start jednym kliknięciem). × zamyka dymek, cel zostaje. Cel z listy celów albo z linku (`cel=`) jest bez dymka. Karta hovera nie pokazuje się w promieniu 90 px od otwartego dymka.
 - **Pinezka startu** jest przeciągana (`addOriginMarker`, `dragend` → `selectPoint`). Włączony zasięg zostaje po zmianie miejsca.
+- **„← Wróć do: …”** nad tytułem panelu (`placeHist`, `rememberPlace`, `backToPlace`, `renderBackPlace`): poprzednie miejsca startu (do 20), powrót zostawia zasięg i cel. Nie zapisuje się w trakcie `applyingState` ani samego powrotu.
+- **Chip zasięgu na mapie** (prawy górny róg, `renderIsoChip`, `onIsoChip`, `applyIsoT`): bez zasięgu „Zasięg N min” (włącza), z zasięgiem typ dnia / godzina wyjścia, − N min + (co 5 min, 10–60) i ✕ (wyłącza, jak Esc). Ukryty bez wybranego miejsca.
 - **Esc** kolejno: wskazywanie celu → cel → linia → zasięg.
 - **Granice mapy:** `setMaxBounds` = prostokąt wszystkich przystanków + 6% marginesu (twarda krawędź, `maxBoundsViscosity` 1). `minZoom` z `getBoundsZoom` — przy najmniejszym przybliżeniu widać cały obszar danych (desktop zoom 10, telefon 9), przeliczane na `resize`.
 - **Przycisk lokalizacji** (pod + −): `navigator.geolocation` → `selectPoint`. Błędy i „poza obszarem danych” w `#notice`.
@@ -23,7 +26,8 @@ Funkcje:
 - **Mapa zasięgu „Gdzie dojadę w N min”**, z przystanku albo z punktu (z punktu: jeden Dijkstra od najbliższej ulicy, chodzenie bez limitu okręgu):
   - obszar wzdłuż osiągalnych ulic,
   - hover na przystanek lub dowolne miejsce pokazuje czas i trasę (przejazdy + kropkowane przejścia),
-  - klik w mapę lub przystanek ustawia cel (nie wyłącza zasięgu, nie zmienia startu) — działa też na dotyku, gdzie nie ma hovera.
+  - klik w mapę lub przystanek ustawia cel z dymkiem (nie wyłącza zasięgu, nie zmienia startu); „Sprawdź to miejsce” w dymku przenosi start — działa też na dotyku, gdzie nie ma hovera (sztuczny `mousemove` po stuknięciu jest ignorowany przez 1 s),
+  - włączenie zasięgu przyciskiem w panelu przewija do suwaka czasu; po zmianie rozmiaru mapy (obrót telefonu, rozwinięcie panelu) pinezka startu wraca do widoku.
 - **Interfejs:** po polsku, z polską odmianą liczebników (np. „2 przystanki / 5 przystanków”).
 - **Stopka panelu** (`renderDataInfo`): data generowania i zakres dni rozkładu z `meta`; po końcu zakresu ostrzeżenie „Rozkład jest nieaktualny”.
 - **Adres strony:** hash `#s=<stopId>` albo `#p=<lat>,<lon>&r=<m>`, do tego `l=<ref|type>` albo `iso=<min>` (+ `dzien=w|s|n` albo `d=RRRR-MM-DD&t=GG:MM`), `dzien` także bez zasięgu (gdy nie roboczy), `cel=<lat>,<lon>`. Link do udostępnienia, „Wstecz” działa.
@@ -120,6 +124,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
 - **Czasy w Dijkstrze trzymaj w `Float64Array`.** Float32 zaokrągla i porównanie z kolejką pomija węzły, przez co zasięg wychodził kilka razy za mały.
 - **Rysowanie setek tysięcy odcinków jako `L.polyline`** trwało ponad 1 s przy każdym zoomie, dlatego jest GridLayer.
 - **Leaflet throttluje `mousemove` na canvasie (32 ms).** W testach Playwright ruszaj myszą w krokach (`steps`), inaczej hover się nie odpali.
+- **Kliknięcie w kontrolkę, która przerysowuje się w trakcie kliknięcia** (chip zasięgu, przycisk w dymku): Leaflet szuka `_leaflet_disable_click` od `e.target` w górę, a odłączony od DOM przycisk go nie ma, więc mapa dostaje `click` i ustawia cel. W takich kontrolkach wołaj `L.DomEvent.stopPropagation(e)` w nasłuchu na samej kontrolce.
 - **Playwright `page.route`** podaje handlerowi `(route, request)`, więc nie używaj drugiego parametru jako własnej flagi.
 
 ## Jak testować
@@ -136,7 +141,8 @@ Sprawdzaj:
 - tryb czasu: Ochodza Odwiśle w niedzielę o 10:00 pokazuje „Najbliższy odjazd: 235 o 15:59”,
 - pokrycie wariantów: każda para linia–przystanek z `stops[].lines` jest w którymś `routes[].trips`,
 - klik w punkt: `selectPoint` < 80 ms synchronicznie, karta celów gotowa ok. 80 ms później; Rynek Główny: 13 linii dziennych + 11 nocnych, Lotnisko ok. 40 min,
-- klik w mapę przy włączonym zasięgu ustawia cel i zostawia zasięg; Esc dwa razy = brak celu i zasięgu.
+- klik w mapę przy włączonym zasięgu ustawia cel z dymkiem i zostawia zasięg; „Sprawdź to miejsce” przenosi start (`#p=` = cel, bez `cel=`, `iso=` zostaje), „Wróć do” przywraca poprzedni; Esc dwa razy = brak celu i zasięgu,
+- chip: − / + zmienia `iso=` w adresie i suwak w panelu, a klik w chip nie ustawia celu (Kurdwanów → Płaszów Estakada ok. 24 min z linią 7).
 
 ## Konwencje
 
