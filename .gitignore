@@ -1,0 +1,9 @@
+# surowe dane — zostają lokalnie (README: aktualizacja danych)
+GTFS_KRK_*
+walk_osm/
+*.osm.pbf
+# kopie zapasowe strony
+*.backup.html
+*-backup.html
+# macOS
+.DS_Store

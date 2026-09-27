@@ -1,0 +1,14 @@
+# GitLab Pages: publikujemy tylko stronę i gotowe dane (bez GTFS, walk_osm/ i skryptów).
+# Dane generujesz lokalnie (README, kroki 1–4) i commitujesz; CI tylko je kopiuje.
+pages:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - mkdir -p public
+    - cp index.html stops_data.json walk.bin transfers.bin public/
+    - cp -r deps conns public/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

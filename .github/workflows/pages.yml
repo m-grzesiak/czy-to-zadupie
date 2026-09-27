@@ -1,0 +1,38 @@
+# GitHub Pages: publikujemy tylko stronę i gotowe dane (bez GTFS, walk_osm/ i skryptów).
+# Dane generujesz lokalnie (README, kroki 1–4) i commitujesz; workflow tylko je kopiuje.
+# Jednorazowo: Settings → Pages → Source: "GitHub Actions".
+name: Publikacja na GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skopiuj stronę i dane do public/
+        run: |
+          mkdir -p public
+          cp index.html stops_data.json walk.bin transfers.bin public/
+          cp -r deps conns public/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4

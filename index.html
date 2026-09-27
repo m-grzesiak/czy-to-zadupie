@@ -1,0 +1,3373 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Czy to zadupie? — dojazdy komunikacją w Krakowie</title>
+<meta name="description" content="Kliknij miejsce w Krakowie i okolicy, a zobaczysz, jak stąd dojedziesz tramwajem i autobusem: linie w pobliżu, co ile jeżdżą, czasy dojazdu i mapę zasięgu.">
+<meta property="og:title" content="Czy to zadupie?">
+<meta property="og:description" content="Sprawdź, jak z danego miejsca w Krakowie dojedziesz komunikacją miejską.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --ink:#1c1c1a;
+    --ink-soft:#5a5850;
+    --paper:#f6f3ec;
+    --paper-raised:#ffffff;
+    --line:#e2ddd0;
+    --tram:#a8322d;
+    --tram-bg:#f7e6e4;
+    --bus:#2a5f74;
+    --bus-bg:#e2edf0;
+    --accent:#c98a2c;
+  }
+  * { box-sizing: border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color:var(--ink);
+    background:var(--paper);
+  }
+  #app{
+    display:flex;
+    flex-direction:column;
+    height:100%;
+  }
+  header{
+    padding:14px 20px;
+    background:var(--paper-raised);
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+  header h1{
+    font-size:17px;
+    margin:0;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  header p{
+    margin:0;
+    font-size:13px;
+    color:var(--ink-soft);
+  }
+  #layout{
+    flex:1;
+    display:flex;
+    min-height:0;
+  }
+  #map{
+    flex:1;
+    min-width:0;
+  }
+  #panel{
+    width:390px;
+    flex-shrink:0;
+    background:var(--paper-raised);
+    border-left:1px solid var(--line);
+    overflow-y:auto;
+    scrollbar-gutter:stable;
+    padding:20px;
+  }
+  #panel h2{
+    font-size:15px;
+    margin:0 0 4px;
+  }
+  #panel .sub{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:0 0 16px;
+  }
+  .radius-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:18px;
+    font-size:13px;
+  }
+  .radius-row input[type=range]{
+    flex:1;
+    accent-color: var(--accent);
+  }
+  .radius-val{
+    font-weight:700;
+    min-width:52px;
+    text-align:right;
+  }
+  .group-label{
+    font-size:11.5px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--ink-soft);
+    margin:16px 0 8px;
+  }
+  .badges{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:30px;
+    height:26px;
+    padding:0 8px;
+    border-radius:6px;
+    font-weight:700;
+    font-size:13px;
+  }
+  .badge.tram{ background:var(--tram-bg); color:var(--tram); }
+  .badge.bus{ background:var(--bus-bg); color:var(--bus); }
+  .badge{
+    cursor:pointer;
+    border:2px solid transparent;
+    transition:transform .1s ease;
+  }
+  .badge:hover{ transform:translateY(-1px); }
+  .badge.selected.tram{ border-color:var(--tram); }
+  .badge.selected.bus{ border-color:var(--bus); }
+  .route-note{
+    font-size:12px;
+    color:var(--ink-soft);
+    margin:8px 0 0;
+    line-height:1.4;
+  }
+  .empty-state{
+    font-size:13.5px;
+    color:var(--ink-soft);
+    line-height:1.5;
+    padding:12px 0;
+  }
+  .stop-list{
+    margin-top:16px;
+    border-top:1px solid var(--line);
+    padding-top:12px;
+  }
+  .stop-item{
+    font-size:12.5px;
+    padding:7px 0;
+    color:var(--ink-soft);
+    border-bottom:1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  }
+  .stop-item:last-child{ border-bottom:none; }
+  .si-top{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .si-top b{ min-width:0; }
+  .si-dist{ flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--ink-soft); }
+  .si-meta{ margin-top:2px; font-size:11.5px; line-height:1.35; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+  .stop-item b{
+    color:var(--ink);
+    font-weight:600;
+  }
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+  .notice{
+    margin:-6px 0 14px; padding:8px 10px; border-radius:8px; font-size:12.5px; line-height:1.45;
+    background:#fbf3e3; border:1px solid #ecd9a8; color:#6b501c;
+  }
+  .data-info{
+    margin-top:22px; padding-top:10px; border-top:1px solid var(--line);
+    font-size:11.5px; line-height:1.45; color:var(--ink-soft);
+  }
+  .data-info.stale{ color:#8a5a1c; }
+  .data-info.stale b{ color:#8a5a1c; }
+  /* --- przycisk "moja lokalizacja" --- */
+  .locate-ctl a{
+    display:flex !important; align-items:center; justify-content:center;
+    width:30px; height:30px; color:var(--ink); background:#fff; cursor:pointer;
+  }
+  .locate-ctl a:hover{ background:#f4f4f4; }
+  .locate-ctl a:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .locate-ctl.busy svg{ animation:loc-spin 1s linear infinite; }
+  @keyframes loc-spin{ to{ transform:rotate(360deg); } }
+  /* --- numery słupków przy wybranym przystanku --- */
+  .pole-label{
+    transform:translate(-50%,-50%); display:inline-block;
+    font:700 10.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-variant-numeric:tabular-nums; color:var(--ink); background:#fff;
+    border:1.5px solid var(--accent); border-radius:5px; padding:2px 4px;
+    box-shadow:0 1px 4px rgba(28,28,26,.25); white-space:nowrap; transition:transform .12s, background-color .12s;
+  }
+  .pole-label.hot{ background:var(--accent); color:#fff; transform:translate(-50%,-50%) scale(1.25); }
+  /* przy małym przybliżeniu etykiety by się nakładały: widać tylko tę z wiersza pod kursorem */
+  #map.z-lo .pole-label{ display:none; }
+  #map.z-lo .pole-label.hot{ display:inline-block; }
+  .dep-row .pl{
+    font-size:10.5px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--ink-soft);
+    border:1px solid var(--line); border-radius:4px; text-align:center; padding:1px 0;
+  }
+  .more-btn{ display:block; margin:10px auto 0; }
+  .demo-note{
+    margin-top:20px;
+    padding:12px;
+    background:#fbf3e3;
+    border:1px solid #ecd9a8;
+    border-radius:8px;
+    font-size:12px;
+    line-height:1.5;
+    color:#6b501c;
+  }
+  /* --- szczegóły linii: odjazdy + czas przejazdu --- */
+  #line-detail:empty{ display:none; }
+  #line-detail{
+    margin-top:16px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px;
+    background:var(--paper);
+  }
+  .ld-head{ display:flex; align-items:center; gap:10px; }
+  .ld-head .badge{ cursor:default; }
+  .ld-head .badge:hover{ transform:none; }
+  .ld-name{ font-size:13px; font-weight:600; line-height:1.3; }
+  .ld-sec{ margin-top:14px; }
+  .ld-sec h3{
+    font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--ink-soft); margin:0 0 8px; font-weight:600;
+  }
+  .ld-from{ font-size:12.5px; color:var(--ink-soft); margin:-2px 0 8px; }
+  .ld-from b{ color:var(--ink); }
+  .chips{ display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px; }
+  .chip{
+    font:inherit; font-size:12px; padding:4px 9px; border-radius:999px;
+    border:1px solid var(--line); background:var(--paper-raised); color:var(--ink);
+    cursor:pointer;
+  }
+  .chip:focus-visible, .badge:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .chip.on{ background:var(--ink); color:var(--paper-raised); border-color:var(--ink); }
+  .dir{ margin-bottom:12px; }
+  .dir-h{ font-size:13px; font-weight:600; margin-bottom:6px; }
+  .next{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+  .next span{
+    font-variant-numeric:tabular-nums; font-size:13px; font-weight:700;
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:6px; padding:3px 7px;
+  }
+  .next span small{ font-weight:400; color:var(--ink-soft); margin-left:4px; }
+  details summary{ font-size:12px; color:var(--ink-soft); cursor:pointer; margin:4px 0; }
+  .tt{ width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:12px; margin-top:4px; }
+  .tt td{ padding:3px 4px; border-top:1px solid var(--line); vertical-align:top; }
+  .tt td.h{ width:26px; font-weight:700; text-align:right; padding-right:8px; border-right:1px solid var(--line); }
+  .tt td.m span{ display:inline-block; min-width:21px; }
+  .tt .past{ color:#b5b1a4; }
+  .muted{ font-size:12px; color:var(--ink-soft); line-height:1.45; }
+  .tl{ list-style:none; margin:0; padding:0; font-size:12.5px; }
+  .tl li{
+    display:flex; justify-content:space-between; gap:8px; padding:4px 0 4px 14px;
+    position:relative; border-left:2px solid var(--line); margin-left:4px;
+  }
+  .tl li::before{
+    content:""; position:absolute; left:-5px; top:9px; width:8px; height:8px;
+    border-radius:50%; background:var(--paper-raised); border:2px solid var(--ink-soft);
+  }
+  .tl li span{ font-variant-numeric:tabular-nums; color:var(--ink-soft); white-space:nowrap; }
+  .tl li{ cursor:pointer; border-radius:0 6px 6px 0; transition:background-color .12s; }
+  .tl li:hover, .tl li:focus-visible{ background:color-mix(in srgb, var(--accent) 12%, transparent); outline:none; }
+  .tl li:hover::before, .tl li:focus-visible::before{ border-color:var(--accent); }
+  .tl li.before{ color:#b5b1a4; }
+  .tl li.before span{ color:#b5b1a4; }
+  .tl li.here{ font-weight:700; }
+  .tl li.here::before{ background:var(--accent); border-color:var(--accent); }
+  .tl li.here span{ color:var(--ink); }
+  .ld-total{ font-size:13px; margin-bottom:8px; }
+  .ld-total b{ font-variant-numeric:tabular-nums; }
+  /* --- tryb przystanku --- */
+  #panel.stop-mode .radius-row{ display:none; }
+  .link-btn{
+    font:inherit; font-size:12.5px; background:none; border:none; padding:0;
+    color:var(--bus); cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+  }
+  .link-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .board{ border-top:1px solid var(--line); }
+  .dep-row{
+    display:grid; grid-template-columns:40px 38px 24px 1fr auto; align-items:center; gap:8px;
+    padding:6px 4px; border-bottom:1px solid var(--line); font-size:13px; cursor:pointer;
+  }
+  .dep-row:hover{ background:var(--paper); }
+  .dep-row:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+  .dep-row .t{ font-weight:700; font-variant-numeric:tabular-nums; }
+  .dep-row .badge{ height:22px; min-width:34px; padding:0 5px; font-size:12px; cursor:pointer; }
+  .dep-row .badge:hover{ transform:none; }
+  .dep-row .h{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .dep-row .in{ font-size:12px; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .dep-row.soon .in{ color:var(--tram); font-weight:700; }
+  .stop-item.clickable{ cursor:pointer; border-radius:4px; }
+  .stop-item.clickable:hover b{ text-decoration:underline; text-underline-offset:2px; }
+  /* --- przystanki wybranej linii --- */
+  .leaflet-tooltip.term-label{
+    font:700 11px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color:var(--ink); padding:3px 7px; border-radius:6px;
+    background:var(--paper-raised); border:1.5px solid var(--term-c, var(--line));
+    box-shadow:0 2px 8px rgba(28,28,26,.18);
+  }
+  .leaflet-tooltip.term-label::before{ display:none; }
+  .leaflet-tooltip-right.term-label{ margin-left:9px; }
+  .leaflet-tooltip-left.term-label{ margin-left:-9px; }
+  /* --- przystanki bez dojścia pieszo --- */
+  .stop-item.unreach b{ color:#8f8a7c; font-weight:500; }
+  .stop-item.unreach em{ font-style:normal; color:#8a5a1c; font-weight:600; }
+  .unreach-note{
+    display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.4; color:var(--ink-soft);
+    margin:4px 0 8px;
+  }
+  .unreach-note i{
+    flex:0 0 auto; width:10px; height:10px; margin-top:3px; border-radius:50%;
+    background:#f1efe8; border:2px dashed #8f8a7c;
+  }
+  .badge.unreach{ opacity:.45; border:2px dashed currentColor; }
+  .badge.unreach.selected{ opacity:.8; }
+  .sh-unreach{ margin-top:7px; font-size:12px; font-weight:600; color:#8a5a1c; }
+  /* --- mapa zasięgu: tryby --- */
+  .seg{ display:flex; margin:10px 0 8px; border:1px solid var(--line); border-radius:9px; padding:2px; background:var(--paper-raised); }
+  .seg button{
+    flex:1; font:inherit; font-size:12.5px; padding:6px 8px; border:0; border-radius:7px;
+    background:transparent; color:var(--ink-soft); cursor:pointer;
+  }
+  .seg button.on{ background:#184f95; color:#fff; font-weight:600; }
+  .seg button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .iso-when{ display:flex; align-items:center; gap:8px; font-size:13px; margin:-2px 0 4px; }
+  .iso-when input[type=time]{
+    font:inherit; font-size:13px; padding:3px 6px; border:1px solid var(--line); border-radius:6px;
+    background:var(--paper-raised); color:var(--ink); font-variant-numeric:tabular-nums;
+  }
+  .iso-next{
+    font-size:12.5px; line-height:1.45; margin:0 0 10px; padding:8px 10px; border-radius:8px;
+    background:color-mix(in srgb, var(--accent) 12%, var(--paper-raised)); border:1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  }
+  .leg-wait{ color:var(--ink-soft); font-weight:400; }
+  /* --- mapa zasięgu --- */
+  .leaflet-iso-pane{ opacity:.5; pointer-events:none; mix-blend-mode:multiply; }
+  /* legenda kropek przystanków */
+  .stop-legend{
+    background:color-mix(in srgb, var(--paper-raised) 88%, transparent); border:1px solid var(--line); border-radius:8px;
+    padding:4px 9px; font-size:11.5px; color:var(--ink); display:flex; gap:10px; align-items:center;
+    box-shadow:0 1px 4px rgba(28,28,26,.12);
+  }
+  .stop-legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .stop-legend i{ width:9px; height:9px; border-radius:50%; background:#fff; border:2px solid; display:block; }
+  #iso-box{ margin-top:14px; }
+  .iso-card{
+    border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--paper);
+  }
+  .iso-start{
+    font:inherit; font-size:13px; font-weight:600; width:100%;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:9px 12px; border-radius:9px; cursor:pointer;
+    border:1px solid color-mix(in srgb, #1c5cab 35%, var(--line));
+    background:color-mix(in srgb, #1c5cab 8%, var(--paper-raised)); color:#184f95;
+  }
+  .iso-start:hover{ background:color-mix(in srgb, #1c5cab 14%, var(--paper-raised)); }
+  .iso-start:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .iso-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .iso-top h3{ margin:0; font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); font-weight:600; }
+  .iso-row{ display:flex; align-items:center; gap:10px; margin:10px 0 4px; font-size:13px; }
+  .iso-row input[type=range]{ flex:1; accent-color:#1c5cab; }
+  .iso-row b{ min-width:52px; text-align:right; font-variant-numeric:tabular-nums; }
+  .iso-sum{ font-size:13px; margin:6px 0 10px; }
+  .iso-sum b{ font-variant-numeric:tabular-nums; }
+  .iso-legend{ display:grid; grid-template-columns:14px 1fr auto; gap:5px 8px; align-items:center; font-size:12px; }
+  .iso-legend i{ width:14px; height:14px; border-radius:4px; display:block; }
+  .iso-legend span:last-child{ color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+  .iso-far{ margin-top:10px; font-size:12px; }
+  .iso-far div{ display:flex; justify-content:space-between; gap:8px; padding:3px 0; border-top:1px solid var(--line); cursor:pointer; }
+  .iso-far div:hover b{ text-decoration:underline; text-underline-offset:2px; }
+  .iso-far span{ color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .sh-iso{
+    margin-top:7px; padding-top:7px; border-top:1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+    font-size:12px; color:var(--ink);
+  }
+  .sh-iso b{ color:#184f95; font-size:13px; }
+  .sh-iso .legs{ color:var(--ink-soft); }
+  .sh-iso .legs b.leg-line, .sh-legs b.leg-line{ color:var(--ink); }
+  .sh-tip-pt{ min-width:0; padding:7px 10px 8px; }
+  .sh-legs{ font-size:12px; color:var(--ink-soft); margin-top:3px; line-height:1.4; }
+  .sh-legs .leg + .leg{ margin-top:2px; }
+  .sh-legs .leg-note{ color:var(--ink-soft); font-weight:400; }
+  .sh-tip.wide{ max-width:320px; }
+  /* --- hover na przystanku --- */
+  .leaflet-hover-pane{ pointer-events:none; }
+  .sh{ position:relative; width:0; height:0; }
+  .sh-dot, .sh-ring, .sh-sib{
+    position:absolute; left:0; top:0; border-radius:50%;
+    transform:translate(-50%,-50%);
+  }
+  .sh-dot{
+    width:14px; height:14px; background:var(--sh-c);
+    box-shadow:0 0 0 3px #fff, 0 2px 10px color-mix(in srgb, var(--sh-c) 55%, transparent);
+    animation:sh-pop .32s cubic-bezier(.34,1.56,.64,1) both;
+  }
+  .sh-ring{
+    width:14px; height:14px; border:2px solid var(--sh-c);
+    animation:sh-pulse 1.6s cubic-bezier(.2,.7,.3,1) .1s infinite;
+  }
+  .sh-sib{
+    width:10px; height:10px; background:#fff; border:2.5px solid var(--sh-c);
+    animation:sh-pop .28s cubic-bezier(.34,1.56,.64,1) both;
+  }
+  .sh-tip{
+    position:absolute; left:0; bottom:16px; transform:translateX(-50%);
+    min-width:160px; width:max-content; max-width:280px; padding:9px 11px 10px;
+    background:color-mix(in srgb, var(--paper-raised) 78%, transparent);
+    -webkit-backdrop-filter:blur(14px) saturate(1.6); backdrop-filter:blur(14px) saturate(1.6);
+    border:1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+    border-radius:12px;
+    box-shadow:0 1px 2px rgba(28,28,26,.08), 0 12px 32px -8px rgba(28,28,26,.28);
+    animation:sh-tip .22s cubic-bezier(.2,.8,.2,1) both;
+    white-space:normal;
+  }
+  .sh.below .sh-tip{ bottom:auto; top:16px; animation-name:sh-tip-below; }
+  .sh.al .sh-tip{ transform:none; left:-18px; animation:none; }
+  .sh.ar .sh-tip{ transform:none; left:auto; right:-18px; animation:none; }
+  .sh-name{ font-size:13px; font-weight:700; color:var(--ink); line-height:1.25; }
+  .sh-meta{ font-size:11px; color:var(--ink-soft); margin-top:1px; }
+  .sh-chips{ display:flex; flex-wrap:wrap; gap:3px; margin-top:7px; }
+  .sh-chips + .sh-chips{ margin-top:4px; }
+  .sh-chips span{
+    font-size:11px; font-weight:700; line-height:18px; padding:0 5px; min-width:22px;
+    text-align:center; border-radius:4px; font-variant-numeric:tabular-nums;
+  }
+  .sh-chips .t{ background:var(--tram-bg); color:var(--tram); }
+  .sh-chips .b{ background:var(--bus-bg); color:var(--bus); }
+  .sh-chips .more{ background:transparent; color:var(--ink-soft); font-weight:600; }
+  @keyframes sh-pop{ from{ transform:translate(-50%,-50%) scale(.3); opacity:0; } to{ transform:translate(-50%,-50%) scale(1); opacity:1; } }
+  @keyframes sh-pulse{
+    0%{ transform:translate(-50%,-50%) scale(1); opacity:.7; }
+    100%{ transform:translate(-50%,-50%) scale(3.2); opacity:0; }
+  }
+  @keyframes sh-tip{ from{ opacity:0; transform:translate(-50%,6px) scale(.97); } to{ opacity:1; transform:translate(-50%,0) scale(1); } }
+  @keyframes sh-tip-below{ from{ opacity:0; transform:translate(-50%,-6px) scale(.97); } to{ opacity:1; transform:translate(-50%,0) scale(1); } }
+  @media (prefers-reduced-motion: reduce){
+    .sh-dot, .sh-sib, .sh-tip{ animation:none; }
+    .sh-ring{ display:none; }
+  }
+  /* --- mapa: fokus tylko z klawiatury --- */
+  #map:focus{ outline:none; }
+  #map:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+  #map.picking, #map.picking .leaflet-interactive{ cursor:crosshair; }
+  #layout{ position:relative; }
+  /* --- wskaźnik wczytywania --- */
+  .loading-pill{
+    position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:1000;
+    display:flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px;
+    background:var(--paper-raised); border:1px solid var(--line); box-shadow:0 2px 10px rgba(28,28,26,.15);
+    font-size:12.5px; color:var(--ink); pointer-events:none;
+  }
+  .loading-pill[hidden]{ display:none; }
+  .loading-pill i{
+    width:12px; height:12px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent);
+    animation:loc-spin .8s linear infinite;
+  }
+  /* --- przykłady w pustym panelu --- */
+  .examples{ display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 4px; }
+  /* --- linie: częstotliwość i nocne --- */
+  .badge .hw{ font-size:10.5px; font-weight:500; margin-left:5px; opacity:.8; white-space:nowrap; }
+  .badge.night{ opacity:.55; font-weight:600; }
+  .badge.night:hover{ opacity:.85; }
+  .badge.night.selected{ opacity:1; }
+  .badge.off{ opacity:.45; }
+  .hw-note{ margin-top:8px; }
+  /* --- karta "Jak stąd dojedziesz" --- */
+  .place-card{
+    border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--paper); margin-bottom:12px;
+  }
+  .pc-top{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .pc-top h3{ margin:0; font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); font-weight:600; }
+  .pc-top select{
+    font:inherit; font-size:12px; padding:2px 4px; border:1px solid var(--line); border-radius:6px;
+    background:var(--paper-raised); color:var(--ink);
+  }
+  .pc-facts{ margin:8px 0 2px; padding:0; list-style:none; font-size:12.5px; line-height:1.45; }
+  .pc-facts li{ padding:2px 0; }
+  .pc-facts b{ font-variant-numeric:tabular-nums; }
+  .pc-facts .muted{ font-size:12px; }
+  .dests{ margin-top:10px; border-top:1px solid var(--line); }
+  .dest{
+    display:grid; grid-template-columns:1fr auto; gap:2px 10px; align-items:baseline;
+    padding:6px 4px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; border-radius:4px;
+  }
+  .dest:last-child{ border-bottom:none; }
+  .dest:hover, .dest:focus-visible{ background:color-mix(in srgb, #1c5cab 7%, transparent); outline:none; }
+  .dest.on{ background:color-mix(in srgb, #1c5cab 12%, transparent); }
+  .dest .dn{ font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dest .dt{ font-weight:700; font-variant-numeric:tabular-nums; color:#184f95; white-space:nowrap; }
+  .dest .dt.far{ color:var(--ink-soft); font-weight:500; }
+  .dest .dl{ grid-column:1 / -1; font-size:11.5px; color:var(--ink-soft); display:flex; flex-wrap:wrap; gap:3px; align-items:center; }
+  .dest .dl span.t, .dest .dl span.b, .tb-lines span.t, .tb-lines span.b{
+    font-size:10.5px; font-weight:700; line-height:16px; padding:0 4px; border-radius:4px; min-width:18px; text-align:center;
+  }
+  .dest .dl span.t, .tb-lines span.t{ background:var(--tram-bg); color:var(--tram); }
+  .dest .dl span.b, .tb-lines span.b{ background:var(--bus-bg); color:var(--bus); }
+  .dest .del{
+    font:inherit; font-size:14px; line-height:1; border:0; background:none; color:var(--ink-soft); cursor:pointer; padding:0 2px; margin-left:4px;
+  }
+  .dest .del:hover{ color:var(--tram); }
+  .dests-h{ font-size:11.5px; color:var(--ink-soft); margin:10px 0 2px; }
+  .pc-actions{ margin-top:8px; display:flex; flex-wrap:wrap; gap:6px 14px; }
+  /* --- wybrany cel --- */
+  .target-box{
+    border:1.5px solid #1c5cab; border-radius:10px; padding:10px 12px; margin-bottom:12px;
+    background:color-mix(in srgb, #1c5cab 6%, var(--paper-raised));
+  }
+  .tb-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .tb-name{ font-size:12px; color:var(--ink-soft); }
+  .tb-name b{ color:var(--ink); }
+  .tb-time{ font-size:15px; font-weight:700; color:#184f95; margin-top:2px; }
+  .tb-time span{ font-size:12px; font-weight:500; color:var(--ink-soft); }
+  .tb-lines{ display:flex; flex-wrap:wrap; gap:3px; margin-top:4px; }
+  .target-box .sh-legs{ margin-top:6px; }
+  .tb-actions{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:8px; align-items:center; }
+  .tb-actions input{
+    font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--line); border-radius:6px; min-width:0; flex:1;
+  }
+  .tb-actions .chip{ margin:0; }
+  .near-list .stop-item{ cursor:pointer; }
+  /* --- panel na telefonie: przycisk rozwijania --- */
+  .panel-toggle{ display:none; }
+  @media (max-width: 760px){
+    header{ padding:10px 14px; }
+    header p{ display:none; }
+    #panel{ padding:0 14px 16px; }
+    #layout{ flex-direction:column; }
+    #map{ min-height:0; }
+    #panel{
+      width:auto;
+      border-left:none;
+      border-top:1px solid var(--line);
+      max-height:48%;
+      transition:max-height .2s ease;
+    }
+    #layout.expanded #panel{ max-height:82%; }
+    .panel-toggle{
+      display:flex; justify-content:center; align-items:center; gap:6px; width:calc(100% + 28px); margin:0 -14px 10px;
+      position:sticky; top:0; z-index:5; padding:7px 0 6px; border:0; border-bottom:1px solid var(--line);
+      background:var(--paper-raised); color:var(--ink-soft); font:inherit; font-size:12px; cursor:pointer;
+    }
+    .panel-toggle::before{ content:""; width:34px; height:4px; border-radius:2px; background:var(--line); }
+    .badge{ height:30px; }
+    .dest{ padding:9px 4px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Czy to zadupie?</h1>
+    <p>Kliknij miejsce na mapie — sprawdzisz, jak stąd dojedziesz komunikacją miejską w Krakowie: linie w pobliżu, czasy dojazdu i mapę zasięgu.</p>
+  </header>
+  <div id="layout">
+    <div id="map"></div>
+    <div class="loading-pill" id="loading"><i></i><span>Wczytuję rozkład…</span></div>
+    <div id="panel">
+      <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false">Więcej</button>
+      <h2 id="panel-title">Wybierz miejsce na mapie</h2>
+      <p class="sub" id="panel-sub"></p>
+      <div class="notice" id="notice" hidden></div>
+      <div class="sr-only" id="sr-status" aria-live="polite" aria-atomic="true"></div>
+
+      <div class="radius-row">
+        <label for="radius">Promień</label>
+        <input type="range" id="radius" min="200" max="2000" step="100" value="500">
+        <span class="radius-val" id="radius-val">500 m</span>
+      </div>
+
+      <div id="results">
+        <div class="empty-state">Kliknij dowolne miejsce albo przystanek. Możesz też zacząć od przykładu:
+          <div class="examples">
+            <button type="button" class="chip" data-example="50.06170,19.93730">Rynek Główny</button>
+            <button type="button" class="chip" data-example="50.01230,19.95750">Kurdwanów</button>
+            <button type="button" class="chip" data-example="50.08230,19.89270">Bronowice</button>
+            <button type="button" class="chip" data-example="50.07180,20.03760">Nowa Huta</button>
+          </div>
+          Przycisk lokalizacji pod „+ −” pokaże okolicę, w której jesteś.</div>
+      </div>
+      <div class="route-note" id="route-status"></div>
+
+      <div class="demo-note" id="data-note" hidden>
+        Wczytuję dane…
+      </div>
+      <div class="data-info" id="data-info"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// DANE ZAPASOWE (demo) — używane tylko gdy nie uda się wczytać stops_data.json
+// (np. brak pliku obok, albo otwarcie przez file:// gdzie fetch() bywa blokowany
+// przez CORS). Prawdziwa, pełna sieć ma siedzieć w osobnym pliku stops_data.json,
+// wygenerowanym skryptem generate_stops_data.py z realnego eksportu GTFS.
+// ---------------------------------------------------------------------------
+const DEMO_STOPS = [
+  { id: "dworzec_glowny", name: "Dworzec Główny", lat: 50.0677, lon: 19.9450,
+    lines: [{ref:"1",type:"tram"},{ref:"4",type:"tram"},{ref:"14",type:"tram"},{ref:"20",type:"tram"},{ref:"71",type:"tram"},{ref:"73",type:"tram"}] },
+  { id: "poczta_glowna", name: "Poczta Główna", lat: 50.0625, lon: 19.9385,
+    lines: [{ref:"1",type:"tram"},{ref:"20",type:"tram"}] },
+  { id: "rondo_mogilskie", name: "Rondo Mogilskie", lat: 50.0668, lon: 19.9548,
+    lines: [{ref:"1",type:"tram"},{ref:"14",type:"tram"},{ref:"20",type:"tram"},{ref:"71",type:"tram"}] },
+  { id: "rondo_grzegorzeckie", name: "Rondo Grzegórzeckie", lat: 50.0575, lon: 19.9530,
+    lines: [{ref:"1",type:"tram"},{ref:"20",type:"tram"},{ref:"722",type:"bus"}] },
+  { id: "filharmonia", name: "Filharmonia", lat: 50.0599, lon: 19.9391,
+    lines: [{ref:"1",type:"tram"},{ref:"4",type:"tram"},{ref:"20",type:"tram"}] },
+  { id: "teatr_bagatela", name: "Teatr Bagatela", lat: 50.0648, lon: 19.9414,
+    lines: [{ref:"4",type:"tram"},{ref:"14",type:"tram"},{ref:"71",type:"tram"}] },
+  { id: "stary_kleparz", name: "Stary Kleparz", lat: 50.0684, lon: 19.9384,
+    lines: [{ref:"14",type:"tram"},{ref:"71",type:"tram"}] },
+  { id: "plac_inwalidow", name: "Plac Inwalidów", lat: 50.0754, lon: 19.9308,
+    lines: [{ref:"4",type:"tram"},{ref:"24",type:"tram"}] },
+  { id: "starowislna", name: "ul. Starowiślna", lat: 50.0568, lon: 19.9452,
+    lines: [{ref:"19",type:"tram"},{ref:"24",type:"tram"}] },
+  { id: "rakowicka", name: "ul. Rakowicka", lat: 50.0700, lon: 19.9530,
+    lines: [{ref:"19",type:"tram"}] },
+  { id: "plac_wszystkich_swietych", name: "Plac Wszystkich Świętych", lat: 50.0587, lon: 19.9350,
+    lines: [{ref:"124",type:"bus"},{ref:"152",type:"bus"}] },
+  { id: "wawel", name: "Wawel (Stradom)", lat: 50.0524, lon: 19.9385,
+    lines: [{ref:"6",type:"tram"},{ref:"8",type:"tram"},{ref:"10",type:"tram"},{ref:"13",type:"tram"},{ref:"18",type:"tram"}] },
+];
+
+// ---------------------------------------------------------------------------
+// Mapa — zainicjowana dopiero po ustaleniu, jakich danych używamy (real vs demo)
+// ---------------------------------------------------------------------------
+let STOPS = [];
+let STOP_BY_ID = new Map();
+let META = null;      // {calendar:{"2026-09-27":0,...}, deps:{dlat,dlon,path}} — brak w danych demo
+let lastNearby = [];
+let stopMode = null;   // {name, lat, lon, poles} gdy kliknięto przystanek
+let selectedDay = null;
+let selectedVariant = 0;
+let routeLayers = [];
+const depsCache = new Map();
+let ROUTES = {};  // "ref|type" -> {ref, type, color, shapes:[[[lat,lon],...],...]}
+let map, stopMarkers = [];
+let clickMarker = null;
+let radiusCircle = null;
+let radiusMeters = 500;
+let routeLayerGroup = null;
+let routeStopsLayer = null, routeStopMarkers = [];
+let previewStopsLayer = null;
+let LINE_STOPS = null;   // "ref|type" -> [przystanki obsługiwane przez linię]
+let selectedRouteKey = null;
+
+const radiusInput = document.getElementById('radius');
+const radiusVal = document.getElementById('radius-val');
+const dataNote = document.getElementById('data-note');
+const routeStatus = document.getElementById('route-status');
+const noticeEl = document.getElementById('notice');
+const srStatus = document.getElementById('sr-status');
+const EMPTY_HTML = document.getElementById('results').innerHTML;
+
+// komunikat nad wynikami (np. błąd lokalizacji); pusty tekst chowa
+function showNotice(text) { noticeEl.hidden = !text; noticeEl.textContent = text || ''; }
+// czytniki ekranu: ogłoś nowy tytuł panelu
+function announce() {
+  const t = document.getElementById('panel-title').textContent, s = document.getElementById('panel-sub').textContent;
+  srStatus.textContent = s ? `${t}. ${s}` : t;
+}
+// polska odmiana liczebników: plural(5, 'linia', 'linie', 'linii') -> 'linii'
+const plural = (n, one, few, many) => n === 1 ? one : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? few : many;
+const przystanki = n => plural(n, 'przystanek', 'przystanki', 'przystanków');
+const linii = n => plural(n, 'linia', 'linie', 'linii');
+// pigułka "Wczytuję…" nad mapą; kilka wczytań naraz = jedna pigułka
+const loadingEl = document.getElementById('loading');
+const loadingJobs = new Map();
+function setLoading(job, text) {
+  if (text) loadingJobs.set(job, text); else loadingJobs.delete(job);
+  loadingEl.hidden = !loadingJobs.size;
+  if (loadingJobs.size) loadingEl.querySelector('span').textContent = [...loadingJobs.values()].pop();
+}
+const dmy = iso => { const [y, m, d] = iso.split('-'); return `${+d}.${m}.${y}`; };
+
+// stopka panelu: z kiedy jest rozkład i na jakie dni
+function renderDataInfo() {
+  const el = document.getElementById('data-info');
+  if (!META || !META.calendar) { el.textContent = ''; return; }
+  const days = Object.keys(META.calendar).sort();
+  const first = days[0], last = days[days.length - 1], today = todayISO();
+  const nNames = new Set(STOPS.map(s => s.name)).size;
+  const stale = today > last;
+  el.classList.toggle('stale', stale);
+  el.innerHTML = (stale
+      ? `<b>Rozkład jest nieaktualny</b> — obejmuje dni ${dmy(first)}–${dmy(last)}, więc pokazuję rozkład z tego samego dnia tygodnia. `
+      : `Rozkład ZTP z ${dmy(META.generated || first)}, odjazdy na dni ${dmy(first)}–${dmy(last)}. `)
+    + `${nNames} ${przystanki(nNames)}.`;
+}
+
+// Dane demo nie mają osobnej geometrii tras — budujemy ją z kolejności przystanków
+// w DEMO_STOPS. To jest przybliżenie (proste połączenie punktów), tylko do demonstracji.
+function buildDemoRoutes(stops) {
+  const acc = {};
+  stops.forEach(s => s.lines.forEach(l => {
+    const key = `${l.ref}|${l.type}`;
+    if (!acc[key]) acc[key] = { ref: l.ref, type: l.type, color: null, points: [] };
+    acc[key].points.push([s.lat, s.lon]);
+  }));
+  const routes = {};
+  Object.entries(acc).forEach(([key, v]) => {
+    if (v.points.length >= 2) routes[key] = { ref: v.ref, type: v.type, color: v.color, shapes: [v.points] };
+  });
+  return routes;
+}
+
+function indexStops() { STOP_BY_ID = new Map(STOPS.map(s => [s.id, s])); }
+
+async function loadStops() {
+  try {
+    const res = await fetch('./stops_data.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('brak pliku');
+    const json = await res.json();
+    if (!Array.isArray(json.stops) || json.stops.length === 0) throw new Error('pusty plik');
+    STOPS = json.stops;
+    ROUTES = json.routes || {};
+    META = json.meta || null;
+    dataNote.hidden = true;   // pełne dane: bez komunikatu (zostaje tylko ostrzeżenie o danych demo)
+  } catch (err) {
+    STOPS = DEMO_STOPS;
+    ROUTES = buildDemoRoutes(DEMO_STOPS);
+    dataNote.hidden = false;
+    dataNote.innerHTML = `<b>Dane przykładowe.</b> Nie znalazłem obok pliku <code>stops_data.json</code>
+      (albo jest pusty), więc pokazuję garstkę realnych, dobrze znanych przystanków centrum —
+      wystarczającą, żeby sprawdzić mechanikę „kliknij i zobacz linie w promieniu” oraz „kliknij linię,
+      zobacz trasę”, ale nie pełną sieć (a jej narysowane trasy to tylko połączenie znanych przystanków,
+      nie prawdziwy przebieg ulicami). Wygeneruj <code>stops_data.json</code> skryptem
+      <code>generate_stops_data.py</code> z prawdziwego eksportu GTFS ZTP Kraków i połóż go w tym samym
+      folderze co ten plik HTML.`;
+  }
+}
+
+function clearRouteLayers() {
+  if (routeLayerGroup) { map.removeLayer(routeLayerGroup); routeLayerGroup = null; }
+  if (routeStopsLayer) { map.removeLayer(routeStopsLayer); routeStopsLayer = null; }
+  if (arrowLayer) { map.removeLayer(arrowLayer); arrowLayer = null; }
+  routeStopMarkers = [];
+}
+
+function lineStops(key) {
+  if (!LINE_STOPS) {
+    LINE_STOPS = new Map();
+    STOPS.forEach(s => s.lines.forEach(l => {
+      const k = `${l.ref}|${l.type}`;
+      if (!LINE_STOPS.has(k)) LINE_STOPS.set(k, []);
+      LINE_STOPS.get(k).push(s);
+    }));
+  }
+  return LINE_STOPS.get(key) || [];
+}
+
+// Wszystkie słupki linii jako kółka w kolorze linii, nad trasą. Pętle (początek/koniec
+// wariantów) są większe i — dla wybranej linii — podpisane.
+function buildRouteStops(route, key, interactive) {
+  const color = routeColor(route);
+  const hl = new Set(lastNearby.map(s => s.id));
+  const terminals = new Set();
+  (route.trips || []).forEach(t => {
+    if (t && t.s.length) { terminals.add(t.s[0][0]); terminals.add(t.s[t.s.length - 1][0]); }
+  });
+  const labelled = new Set(), W = routeW();
+  const markers = lineStops(key).map(s => {
+    const term = terminals.has(s.id);
+    const m = L.circleMarker([s.lat, s.lon], {
+      radius: term ? W.term : W.st, weight: term ? W.sw + 0.6 : W.sw,
+      color, fillColor: hl.has(s.id) ? '#f0b862' : '#fff', fillOpacity: 1,
+      interactive, bubblingMouseEvents: false,
+    });
+    if (interactive) {
+      m.on('mouseover', () => showStopHover(s));
+      m.on('mouseout', () => stopMouseOut(s));
+      m.on('click', () => stopClicked(s));
+      if (term && !labelled.has(s.name)) {
+        labelled.add(s.name);
+        m.bindTooltip(esc(s.name), { permanent: true, direction: 'auto', offset: [0, 0], className: 'term-label' });
+        m.on('add', () => m.getTooltip()?.getElement()?.style.setProperty('--term-c', color));
+      }
+    }
+    return { m, s, term };
+  });
+  return { layer: L.layerGroup(markers.map(x => x.m)), markers };
+}
+
+function routeColor(route) {
+  return route.color ? ('#' + route.color.replace(/^#/, '')) : (route.type === 'tram' ? '#a8322d' : '#2a5f74');
+}
+
+// Podgląd trasy po najechaniu na numer linii (bez przybliżania mapy)
+let previewLayer = null, previewKey = null;
+function showPreview(key) {
+  if (key === previewKey) return;
+  clearPreview();
+  if (key === selectedRouteKey) return;
+  const route = ROUTES[key];
+  if (!route || !route.shapes || !route.shapes.length) return;
+  previewKey = key;
+  const color = routeColor(route);
+  const W = routeW();
+  const casing = route.shapes.map(pts => L.polyline(pts, { color: '#fff', weight: W.sel + 3, opacity: 0.8, lineJoin: 'round', interactive: false }));
+  const lines = route.shapes.map(pts => L.polyline(pts, { color, weight: Math.max(2.5, W.sel - 1), opacity: 0.95, lineJoin: 'round', interactive: false }));
+  previewLayer = L.layerGroup([...casing, ...lines]).addTo(map);
+  previewStopsLayer = buildRouteStops(route, key, false).layer.addTo(map);
+  routeLayers.forEach(l => l.setStyle({ opacity: 0.2 }));
+}
+function clearPreview() {
+  if (previewLayer) { map.removeLayer(previewLayer); previewLayer = null; }
+  if (previewStopsLayer) { map.removeLayer(previewStopsLayer); previewStopsLayer = null; }
+  if (previewKey !== null) { previewKey = null; styleVariants(); }
+}
+
+function selectRoute(key) {
+  clearPreview();
+  if (selectedRouteKey === key) {
+    selectedRouteKey = null;
+    clearRouteLayers();
+    routeLayers = [];
+    routeStatus.textContent = '';
+    restyleStops();
+    updateBadgeSelection();
+    renderLineDetail();
+    syncURL(true);
+    return;
+  }
+  const wasSel = !!selectedRouteKey;
+  selectedRouteKey = key;
+  selectedVariant = defaultVariant(key);
+  if (!wasSel) restyleStops();   // pozostałe przystanki przygaszone od razu, nie dopiero po zoomie
+  drawRoute(key);
+  updateBadgeSelection();
+  renderLineDetail();
+  syncURL(true);
+}
+
+function drawRoute(key) {
+  clearRouteLayers();
+  const route = ROUTES[key];
+  if (!route || !route.shapes || route.shapes.length === 0) {
+    routeStatus.textContent = `Brak zapisanej geometrii trasy dla linii ${key.split('|')[0]} w danych źródłowych.`;
+    return;
+  }
+  const color = routeColor(route);
+  const layers = route.shapes.map(pts => L.polyline(pts, { color, weight: 4, opacity: 0.85, lineJoin: 'round', interactive: false }));
+  routeLayers = layers;
+  routeLayerGroup = L.layerGroup(layers).addTo(map);
+  const st = buildRouteStops(route, key, true);
+  routeStopsLayer = st.layer.addTo(map);
+  routeStopMarkers = st.markers;
+  styleVariants();
+  routeStatus.textContent = `Trasa linii ${route.ref} (${route.type === 'tram' ? 'tramwaj' : 'autobus'})`
+    + (route.name ? `: ${route.name}` : '')
+    + (route.shapes.length > 1 ? ` — ${route.shapes.length} warianty/kierunki.` : '.');
+
+  // Widok: fragment trasy w okolicy wybranego miejsca (do 3 km), a nie cała linia przez pół miasta.
+  // Mapę tylko oddalamy/przesuwamy, nigdy nie przybliżamy.
+  const allPts = route.shapes.flat();
+  const c = stopMode ? L.latLng(stopMode.lat, stopMode.lon) : radiusCircle ? radiusCircle.getLatLng() : null;
+  let pts = allPts;
+  if (c) {
+    const near = allPts.filter(p => haversineMeters(c.lat, c.lng, p[0], p[1]) <= 3000);
+    if (near.length > 1) pts = near.concat([[c.lat, c.lng]]);
+  }
+  const bounds = L.latLngBounds(pts);
+  if (bounds.isValid() && !map.getBounds().contains(bounds)) map.fitBounds(bounds, { padding: [30, 30], maxZoom: map.getZoom() });
+}
+
+function updateBadgeSelection() {
+  document.querySelectorAll('.badge').forEach(el => {
+    el.classList.toggle('selected', el.dataset.key === selectedRouteKey);
+  });
+}
+
+document.getElementById('results').addEventListener('click', (e) => {
+  const ex = e.target.closest('[data-example]');
+  if (ex) { const [la, lo] = ex.dataset.example.split(',').map(Number); const ll = L.latLng(la, lo); selectPoint(ll); map.setView(ll, 15); return; }
+  const del = e.target.closest('[data-place-del]');
+  if (del) { e.stopPropagation(); removeMyPlace(+del.dataset.placeDel); return; }
+  const dst = e.target.closest('[data-dest]');
+  if (dst) { const d = destById(dst.dataset.dest); if (d) setTarget(d.lat, d.lon, d.name, true); return; }
+  if (e.target.closest('[data-pick-target]')) { setPicking(!pickingTarget); return; }
+  if (e.target.closest('[data-target-clear]')) { clearTarget(); return; }
+  if (e.target.closest('[data-target-origin]')) { if (target) { const ll = L.latLng(target.lat, target.lon); clearTarget(); selectPoint(ll); } return; }
+  if (e.target.closest('[data-target-save]')) { renderTargetBox(true); return; }
+  if (e.target.closest('[data-target-save-ok]')) { saveTargetAsPlace(); return; }
+  if (e.target.closest('[data-target-save-cancel]')) { renderTargetBox(false); return; }
+  const grow = e.target.closest('[data-radius-to]');
+  if (grow) { setRadius(+grow.dataset.radiusTo); return; }
+  const im = e.target.closest('[data-iso-mode]');
+  if (im) {
+    isoMode = im.dataset.isoMode;
+    if (isoMode === 'time') { isoDate = isoDate || todayISO(); if (isoTime == null) isoTime = nowMinutes(); }
+    computeIso(); return;
+  }
+  const idy = e.target.closest('[data-iso-day]');
+  if (idy) { setDayType(idy.dataset.isoDay); return; }
+  const idt = e.target.closest('[data-iso-date]');
+  if (idt) { isoDate = idt.dataset.isoDate; computeIso(); return; }
+  const inow = e.target.closest('[data-iso-now]');
+  if (inow) { isoDate = todayISO(); isoTime = nowMinutes(); computeIso(); return; }
+  const igo = e.target.closest('[data-iso-goto]');
+  if (igo) { const [d, m] = igo.dataset.isoGoto.split(','); isoDate = d; isoTime = +m; computeIso(); return; }
+  const iat = e.target.closest('[data-iso-at]');
+  if (iat) { isoTime = +iat.dataset.isoAt; computeIso(); return; }
+  const isoBtn = e.target.closest('[data-iso]');
+  if (isoBtn) {
+    if (isoBtn.dataset.iso === 'on') computeIso(); else { clearIso(); renderIsoBox(); syncURL(true); }
+    return;
+  }
+  if (e.target.closest('[data-board-more]')) { boardLimit = Math.max(boardLimit, 8) + 16; renderBoard(); return; }
+  const around = e.target.closest('[data-around]');
+  if (around && stopMode) { const { lat, lon } = stopMode; selectPoint(L.latLng(lat, lon)); return; }
+  const stopEl = e.target.closest('[data-stop-id]');
+  if (stopEl) { const st = STOP_BY_ID.get(stopEl.dataset.stopId); hideListStop(); if (st) selectStop(st); return; }
+  const lineEl = e.target.closest('[data-line]');
+  if (lineEl) {
+    const k = lineEl.dataset.line;
+    if (selectedRouteKey !== k) selectRoute(k);
+    document.getElementById('line-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  const day = e.target.closest('[data-day]');
+  if (day) { selectedDay = day.dataset.day; renderLineDetail(); return; }
+  const v = e.target.closest('[data-variant]');
+  if (v) { selectedVariant = +v.dataset.variant; styleVariants(); renderLineDetail(); return; }
+  const badge = e.target.closest('.badges .badge');
+  if (!badge) return;
+  selectRoute(badge.dataset.key);
+});
+const HOVER_SEL = '.badges .badge, .dep-row';
+document.getElementById('results').addEventListener('mouseover', (e) => {
+  const el = e.target.closest(HOVER_SEL);
+  if (el) { showPreview(el.dataset.key || el.dataset.line); hotPole(el.dataset.pole); }
+});
+document.getElementById('results').addEventListener('mouseout', (e) => {
+  const el = e.target.closest(HOVER_SEL);
+  if (el && !el.contains(e.relatedTarget)) { clearPreview(); hotPole(null); }
+});
+document.getElementById('results').addEventListener('focusin', (e) => {
+  const el = e.target.closest(HOVER_SEL);
+  if (el) { showPreview(el.dataset.key || el.dataset.line); hotPole(el.dataset.pole); }
+});
+document.getElementById('results').addEventListener('focusout', () => { clearPreview(); hideStopHover(); hotPole(null); });
+
+// Najechanie na przystanek w liście (czas przejazdu, lista przystanków) pokazuje go na mapie.
+// Jeśli jest poza widokiem, mapa lekko się przesuwa, a karta pojawia się po przesunięciu.
+let listHoverId = null;
+function showListStop(id) {
+  const st = STOP_BY_ID.get(id);
+  if (!st || id === listHoverId) return;
+  listHoverId = id;
+  const ll = L.latLng(st.lat, st.lon);
+  if (map.getBounds().pad(-0.05).contains(ll)) { showStopHover(st); return; }
+  map.once('moveend', () => { if (listHoverId === id) showStopHover(st); });
+  map.panInside(ll, { padding: [80, 80] });
+}
+function hideListStop() { listHoverId = null; hideStopHover(); }
+document.getElementById('results').addEventListener('mouseover', (e) => {
+  const el = e.target.closest('[data-stop-id]');
+  if (el) showListStop(el.dataset.stopId);
+});
+document.getElementById('results').addEventListener('mouseout', (e) => {
+  const el = e.target.closest('[data-stop-id]');
+  if (el && !el.contains(e.relatedTarget)) hideListStop();
+});
+document.getElementById('results').addEventListener('focusin', (e) => {
+  const el = e.target.closest('[data-stop-id]');
+  if (el) showListStop(el.dataset.stopId);
+});
+document.getElementById('results').addEventListener('keydown', (e) => {
+  if (e.target.id === 'place-name' && e.key === 'Enter') { e.preventDefault(); saveTargetAsPlace(); return; }
+  if (e.target.id === 'place-name' && e.key === 'Escape') { e.stopPropagation(); renderTargetBox(false); return; }
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.target.matches('.badges .badge')) { e.preventDefault(); selectRoute(e.target.dataset.key); }
+  else if (e.target.matches('[data-stop-id], [data-line], [data-dest]')) { e.preventDefault(); e.target.click(); }
+});
+document.getElementById('results').addEventListener('change', (e) => {
+  if (e.target.id === 'day-type') setDayType(e.target.value);
+});
+// najechanie na cel z listy: trasa na mapie (bez zmiany wybranego celu)
+document.getElementById('results').addEventListener('mouseover', (e) => {
+  const el = e.target.closest('[data-dest]');
+  if (!el) return;
+  const d = destById(el.dataset.dest), C = targetCtx();
+  if (!d || !C) return;
+  const r = routeTo(C, d.lat, d.lon);
+  if (r && r.legs) drawLegs(r.legs, null, C);
+});
+document.getElementById('results').addEventListener('mouseout', (e) => {
+  const el = e.target.closest('[data-dest]');
+  if (el && !el.contains(e.relatedTarget) && !stopHoverOn && isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+});
+
+// ---------------------------------------------------------------------------
+// Szczegóły linii: odjazdy z najbliższego przystanku + czas przejazdu po trasie
+// ---------------------------------------------------------------------------
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const inMin = d => d < 60 ? `${d} min` : d % 60 ? `${Math.floor(d / 60)} h ${d % 60} min` : `${d / 60} h`;
+const zaMin = d => d <= 0 ? 'teraz' : `za ${inMin(d)}`;
+const nDeps = n => `${n} ${n === 1 ? 'odjazd' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 'odjazdy' : 'odjazdów'}`;
+const DOW = ['niedz.', 'pon.', 'wt.', 'śr.', 'czw.', 'pt.', 'sob.'];
+
+function localISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function todayISO() { return localISO(new Date()); }
+
+function servesLine(stop, key) {
+  const [ref, type] = key.split('|');
+  return stop.lines.some(l => l.ref === ref && l.type === type);
+}
+
+// najbliższy (po nazwie) przystanek w promieniu, który obsługuje linię — wszystkie jego słupki
+function nearestPoles(key) {
+  const serving = lastNearby.filter(s => servesLine(s, key));
+  if (!serving.length) return null;
+  const name = serving[0].name;
+  return { name, dist: serving[0].dist, poles: serving.filter(s => s.name === name) };
+}
+
+function defaultVariant(key) {
+  const route = ROUTES[key];
+  const np = nearestPoles(key);
+  if (!route || !route.trips || !np) return 0;
+  // wolimy wariant, w którym pobliski przystanek jest wcześnie (czyli jedziemy "stąd")
+  let best = 0, bestPos = Infinity;
+  route.trips.forEach((t, i) => {
+    if (!t) return;
+    const pos = t.s.findIndex(([id]) => STOP_BY_ID.get(id)?.name === np.name);
+    const rel = pos < 0 ? Infinity : pos / t.s.length;
+    if (rel < bestPos) { bestPos = rel; best = i; }
+  });
+  return best;
+}
+
+// Grubość trasy i kółek przystanków zależy od przybliżenia: przy oddaleniu gruba linia i duże kółka
+// zlewały pętle i zawracania w jedną plamę.
+function routeW() {
+  const z = map ? map.getZoom() : 14;
+  return z >= 16 ? { sel: 6, oth: 3, st: 4.5, term: 6, sw: 2.5 }
+       : z >= 15 ? { sel: 5, oth: 2.5, st: 3.8, term: 5.5, sw: 2.2 }
+       : z >= 14 ? { sel: 4, oth: 2, st: 3.2, term: 4.8, sw: 1.8 }
+       :           { sel: 3, oth: 1.6, st: 2.4, term: 4, sw: 1.4 };
+}
+function styleVariants() {
+  const W = routeW();
+  routeLayers.forEach((l, i) => l.setStyle(i === selectedVariant
+    ? { weight: W.sel, opacity: 0.95 } : { weight: W.oth, opacity: 0.45 }));
+  if (routeLayers[selectedVariant]) routeLayers[selectedVariant].bringToFront();
+  routeStopMarkers.forEach(({ m, term }) => { m.setRadius(term ? W.term : W.st); m.setStyle({ weight: term ? W.sw + 0.6 : W.sw }); });
+  drawRouteArrows();
+  // przystanki linii zawsze nad jej trasą (bringToFront wyżej przesuwa linię na wierzch)
+  routeStopMarkers.forEach(({ m }) => m.bringToFront());
+}
+
+// Strzałki kierunku jazdy na wybranym wariancie (co ~90 px ekranu), żeby było widać, którędy
+// autobus objeżdża pętlę albo zawraca. Liczone w pikselach, więc przeliczane po każdym zoomie.
+let arrowLayer = null;
+function drawRouteArrows() {
+  if (arrowLayer) { map.removeLayer(arrowLayer); arrowLayer = null; }
+  const route = selectedRouteKey && ROUTES[selectedRouteKey];
+  const shape = route && route.shapes && route.shapes[selectedVariant];
+  if (!shape || shape.length < 2) return;
+  const W = routeW(), color = routeColor(route);
+  const size = Math.max(6, W.sel * 1.6), STEP = 90;   // wyraźnie szersze niż linia
+  const pts = shape.map(p => map.latLngToLayerPoint(p));
+  const stopPx = routeStopMarkers.map(({ s }) => map.latLngToLayerPoint([s.lat, s.lon]));
+  const arrows = [];
+  let next = STEP / 2;                     // odległość (px) do następnej strzałki od początku odcinka
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], seg = a.distanceTo(b);
+    if (!seg) continue;
+    const ux = (b.x - a.x) / seg, uy = (b.y - a.y) / seg;
+    for (; next <= seg; next += STEP) {
+      const c = L.point(a.x + ux * next, a.y + uy * next);
+      if (stopPx.some(p => p.distanceTo(c) < size + 6)) continue;   // nie na kółku przystanku
+      const tip = L.point(c.x + ux * size, c.y + uy * size);
+      const l = L.point(c.x - ux * size * 0.6 - uy * size * 0.8, c.y - uy * size * 0.6 + ux * size * 0.8);
+      const r = L.point(c.x - ux * size * 0.6 + uy * size * 0.8, c.y - uy * size * 0.6 - ux * size * 0.8);
+      arrows.push(L.polygon([tip, l, r].map(p => map.layerPointToLatLng(p)), {
+        color: '#fff', weight: 1.5, fillColor: color, fillOpacity: 1, interactive: false,
+      }));
+    }
+    next -= seg;
+  }
+  if (arrows.length) arrowLayer = L.layerGroup(arrows).addTo(map);
+}
+
+function loadCell(cell) {
+  if (!depsCache.has(cell)) {
+    depsCache.set(cell, fetch(`./${META.deps.path}${cell}.json`)
+      .then(r => r.ok ? r.json() : {}).catch(() => ({})));
+  }
+  return depsCache.get(cell);
+}
+const cellOf = s => `${Math.floor(s.lat / META.deps.dlat)}_${Math.floor(s.lon / META.deps.dlon)}`;
+
+// profil rozkładu dla daty; poza zakresem danych bierzemy ten sam dzień tygodnia
+function profileFor(iso) {
+  const cal = META.calendar;
+  if (iso in cal) return { p: cal[iso], approx: null };
+  const dow = new Date(iso + 'T12:00').getDay();
+  const days = Object.keys(cal).filter(d => new Date(d + 'T12:00').getDay() === dow);
+  const d = days[days.length - 1];
+  return d ? { p: cal[d], approx: d } : null;
+}
+
+let detailToken = 0;
+async function renderLineDetail() {
+  const el = document.getElementById('line-detail');
+  if (!el) return;
+  const key = selectedRouteKey;
+  const route = key && ROUTES[key];
+  if (!route) { el.innerHTML = ''; return; }
+  const token = ++detailToken;
+  const np = nearestPoles(key);
+
+  let html = `<div class="ld-head"><span class="badge ${route.type}">${esc(route.ref)}</span>
+    <div class="ld-name">${esc(route.name || (route.type === 'tram' ? 'Tramwaj' : 'Autobus'))}</div></div>`;
+
+  // --- odjazdy ---
+  html += '<div class="ld-sec"><h3>Odjazdy</h3>';
+  let depsHtml;
+  if (!META || !META.calendar) {
+    depsHtml = '<div class="muted">Rozkład jest dostępny tylko dla pełnych danych (stops_data.json + katalog deps/).</div>';
+  } else if (!np) {
+    depsHtml = '<div class="muted">Ta linia nie zatrzymuje się w zaznaczonym promieniu.</div>';
+  } else {
+    depsHtml = null;
+  }
+  if (depsHtml) {
+    html += depsHtml + '</div>';
+  } else {
+    const today = todayISO();
+    if (!selectedDay || selectedDay < today) selectedDay = today;
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i);
+      days.push(localISO(d));
+    }
+    // odległość jak na liście przystanków: pieszo po ulicach, jeśli policzona
+    const walkM = pointReach ? Math.min(...np.poles.map(p => pointReach.get(p.id) ?? Infinity)) : Infinity;
+    const distTxt = isFinite(walkM) ? `${Math.round(walkM / 10) * 10} m pieszo` : `${Math.round(np.dist)} m`;
+    html += `<div class="ld-from">z przystanku <b>${esc(np.name)}</b>${stopMode ? '' : ` · ${distTxt}`}</div>`;
+    html += '<div class="chips">' + days.map((d, i) => {
+      const dd = new Date(d + 'T12:00');
+      const label = i === 0 ? 'Dziś' : i === 1 ? 'Jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
+      return `<button type="button" class="chip${d === selectedDay ? ' on' : ''}" data-day="${d}">${label}</button>`;
+    }).join('') + '</div>';
+    html += '<div id="deps-body"><div class="muted">Wczytuję rozkład…</div></div></div>';
+  }
+
+  // --- czas przejazdu ---
+  html += '<div class="ld-sec"><h3>Czas przejazdu</h3>';
+  const trips = route.trips || [];
+  if (!trips.some(Boolean)) {
+    html += '<div class="muted">Brak czasów przejazdu w tych danych.</div></div>';
+  } else {
+    if (!trips[selectedVariant]) selectedVariant = trips.findIndex(Boolean);
+    if (trips.length > 1) {
+      const hcount = {};
+      trips.forEach(t => { if (t) hcount[t.h] = (hcount[t.h] || 0) + 1; });
+      html += '<div class="chips">' + trips.map((t, i) => {
+        if (!t) return '';
+        // ten sam kierunek w kilku wariantach: pokaż cały odcinek "skąd → dokąd"
+        const label = hcount[t.h] > 1 ? `${esc(STOP_BY_ID.get(t.s[0][0])?.name || '')} → ${esc(t.h)}` : `→ ${esc(t.h)}`;
+        return `<button type="button" class="chip${i === selectedVariant ? ' on' : ''}" data-variant="${i}">${label}</button>`;
+      }).join('') + '</div>';
+    }
+    const t = trips[selectedVariant];
+    const here = np ? t.s.findIndex(([id]) => STOP_BY_ID.get(id)?.name === np.name) : -1;
+    const base = here >= 0 ? (t.s[here][1] ?? 0) : 0;
+    const total = t.s[t.s.length - 1][1];
+    const fromName = STOP_BY_ID.get(t.s[here >= 0 ? here : 0][0])?.name || '';
+    const lastName = STOP_BY_ID.get(t.s[t.s.length - 1][0])?.name || t.h;
+    if (total != null) {
+      html += `<div class="ld-total">${esc(fromName)} → ${esc(lastName)}: <b>${total - base} min</b>`
+        + (here > 0 ? ` <span class="muted">(cała trasa ${total} min)</span>` : '') + '</div>';
+    }
+    html += '<ul class="tl">' + t.s.map(([id, off], i) => {
+      const name = STOP_BY_ID.get(id)?.name || id;
+      // dwa słupki tej samej nazwy pod rząd (np. pętla): jeden wiersz — zostaje późniejszy albo "tu"
+      const nm = j => STOP_BY_ID.get(t.s[j][0])?.name || t.s[j][0];
+      if (i !== here && ((i + 1 < t.s.length && nm(i + 1) === name) || (i > 0 && i - 1 === here && nm(i - 1) === name))) return '';
+      const cls = here >= 0 && i < here ? 'before' : i === here ? 'here' : '';
+      const val = off == null ? '' : (here >= 0 && i < here ? '' : `+${off - base} min`);
+      return `<li class="${cls}" data-stop-id="${esc(id)}" tabindex="0" title="Pokaż przystanek">${esc(name)}<span>${val}</span></li>`;
+    }).join('') + '</ul>';
+    html += `<div class="muted" style="margin-top:6px">Czasy z rozkładu dla kursu około południa; w szczycie mogą być dłuższe.</div></div>`;
+  }
+
+  el.innerHTML = html;
+  if (META && META.calendar && np) renderDeps(np, key, token);
+}
+
+async function renderDeps(np, key, token) {
+  const cells = [...new Set(np.poles.map(cellOf))];
+  const data = await Promise.all(cells.map(loadCell));
+  if (token !== detailToken) return;          // w międzyczasie kliknięto coś innego
+  const body = document.getElementById('deps-body');
+  if (!body) return;
+
+  const prof = profileFor(selectedDay);
+  if (!prof) { body.innerHTML = '<div class="muted">Brak rozkładu na ten dzień.</div>'; return; }
+
+  // scal odjazdy ze wszystkich słupków przystanku, pogrupowane po kierunku
+  const byDir = new Map();
+  np.poles.forEach(s => {
+    data.forEach(cell => (cell[s.id]?.[key] || []).forEach(e => {
+      const mins = e.t[e.p[prof.p]] || [];
+      if (!byDir.has(e.h)) byDir.set(e.h, []);
+      byDir.get(e.h).push(...mins);
+    }));
+  });
+  const dirs = [...byDir.entries()].map(([h, m]) => [h, [...new Set(m)].sort((a, b) => a - b)]).filter(([, m]) => m.length);
+  if (!dirs.length) { body.innerHTML = '<div class="muted">Tego dnia ta linia nie odjeżdża z tego przystanku.</div>'; return; }
+
+  const isToday = selectedDay === todayISO();
+  const now = new Date(); const nowMin = now.getHours() * 60 + now.getMinutes();
+  let html = prof.approx ? `<div class="muted" style="margin-bottom:8px">Brak danych na ten dzień — pokazuję rozkład z ${prof.approx}.</div>` : '';
+  dirs.forEach(([h, mins]) => {
+    html += `<div class="dir"><div class="dir-h">→ ${esc(h)}</div>`;
+    if (isToday) {
+      const next = mins.filter(m => m >= nowMin).slice(0, 4);
+      html += next.length
+        ? '<div class="next">' + next.map(m => `<span>${fmt(m)}<small>${zaMin(m - nowMin)}</small></span>`).join('') + '</div>'
+        : '<div class="muted">Dziś już nie ma odjazdów.</div>';
+    }
+    const hours = new Map();
+    mins.forEach(m => { const hh = Math.floor(m / 60); if (!hours.has(hh)) hours.set(hh, []); hours.get(hh).push(m); });
+    const table = '<table class="tt">' + [...hours.entries()].map(([hh, ms]) =>
+      `<tr><td class="h">${hh % 24}</td><td class="m">` + ms.map(m =>
+        `<span class="${isToday && m < nowMin ? 'past' : ''}">${String(m % 60).padStart(2, '0')}</span>`).join(' ') + '</td></tr>'
+    ).join('') + '</table>';
+    html += isToday ? `<details><summary>Pełny rozkład (${nDeps(mins.length)})</summary>${table}</details>`
+                    : `<div class="muted">${nDeps(mins.length)}</div>${table}`;
+    html += '</div>';
+  });
+  body.innerHTML = html;
+}
+
+// Własna pinezka jako inline SVG — domyślna ikonka Leaflet to plik PNG z folderu
+// images/, którego CDN nie dostarcza razem z samym JS/CSS, więc bez tego byłaby
+// niewidoczna (złamany link do obrazka).
+const clickIcon = L.divIcon({
+  className: '',
+  html: `<svg width="26" height="36" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg">
+    <path d="M13 0C5.8 0 0 5.8 0 13c0 9.5 13 23 13 23s13-13.5 13-23C26 5.8 20.2 0 13 0z" fill="#c98a2c"/>
+    <circle cx="13" cy="13" r="5.5" fill="#fff"/>
+  </svg>`,
+  iconSize: [26, 36],
+  iconAnchor: [13, 36],
+});
+
+// Przycisk "moja lokalizacja" (pod + −): zaznacza punkt w miejscu użytkownika
+const LocateControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd() {
+    const box = L.DomUtil.create('div', 'leaflet-bar locate-ctl');
+    box.innerHTML = `<a href="#" role="button" title="Moja lokalizacja" aria-label="Pokaż linie w pobliżu mojej lokalizacji">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">
+      <circle cx="9" cy="9" r="5.2"/><circle cx="9" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+      <path d="M9 1v2.6M9 14.4V17M1 9h2.6M14.4 9H17" stroke-linecap="round"/></svg></a>`;
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.on(box.firstChild, 'click', e => { L.DomEvent.preventDefault(e); locateMe(box); });
+    return box;
+  },
+});
+function locateMe(box) {
+  if (!navigator.geolocation) { showNotice('Ta przeglądarka nie udostępnia lokalizacji.'); return; }
+  box.classList.add('busy');
+  navigator.geolocation.getCurrentPosition(pos => {
+    box.classList.remove('busy');
+    const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    if (selectedRouteKey) selectRoute(selectedRouteKey);
+    selectPoint(ll);
+    const near = STOPS.some(s => haversineMeters(ll.lat, ll.lng, s.lat, s.lon) < 5000);
+    if (!near) showNotice('Jesteś poza obszarem, który obejmują dane (Kraków i okolice).');
+    map.setView(ll, Math.max(map.getZoom(), 15));
+  }, err => {
+    box.classList.remove('busy');
+    showNotice(err.code === 1 ? 'Nie mam zgody na lokalizację. Zezwól na nią w ustawieniach przeglądarki albo kliknij miejsce na mapie.'
+      : 'Nie udało się ustalić lokalizacji. Spróbuj ponownie albo kliknij miejsce na mapie.');
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+
+// Styl kropek przystanków: rozmiar zależy od przybliżenia, przy zasięgu kropki są przygaszone
+// ekran dotykowy: większe kropki i większa tolerancja trafienia palcem
+const COARSE = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+function stopScale() { const z = map ? map.getZoom() : 14; return (z >= 16 ? 1.3 : z >= 14 ? 1 : z >= 12 ? 0.75 : 0.55) * (COARSE ? 1.25 : 1); }
+// Przystanek = biała kropka z obwódką w kolorze tego, co tam jeździ (tramwaj / autobus; oba = tramwajowa).
+// Biały środek i ciemna, nasycona obwódka odcinają się od każdego tła mapy (zabudowa, drogi, zieleń),
+// a kolor od razu mówi, czy to przystanek tramwajowy. Przy zasięgu kropki są przygaszone.
+const STOP_TRAM = '#a8322d', STOP_BUS = '#2a5f74';
+function stopKind(s) {
+  if (s._kind === undefined) s._kind = s.lines.some(l => l.type === 'tram') ? 'tram' : 'bus';
+  return s._kind;
+}
+function baseStopStyle(s) {
+  const k = stopScale();
+  // przy zasięgu albo wybranej linii pozostałe przystanki schodzą na drugi plan (przystanki linii mają własne kółka)
+  if (iso || selectedRouteKey) return { radius: 2.6 * k, weight: 1, color: '#9d998d', fillColor: '#f4f2ec', fillOpacity: 0.8, opacity: 0.7, dashArray: null };
+  return { radius: 3.4 * k, weight: Math.max(1.3, 2 * k), color: s && stopKind(s) === 'tram' ? STOP_TRAM : STOP_BUS,
+           fillColor: '#ffffff', fillOpacity: 1, opacity: 0.95, dashArray: null };
+}
+function restyleStops() { highlightStops(hlIds, hlUnreach); }
+
+function initMap() {
+  map = L.map('map', { zoomControl: true, preferCanvas: true, renderer: L.canvas({ tolerance: COARSE ? 10 : 2 }) })
+    .setView([50.0619, 19.9368], 14);
+
+  // Oficjalne kafelki OpenStreetMap. Blokują żądania bez realnego Referera (stąd 403
+  // przy otwieraniu tego pliku bezpośrednio z dysku przez file://) — ale ze strony
+  // hostowanej pod prawdziwym adresem (np. GitHub Pages) powinny działać normalnie.
+  // Używaj tego bezpośredniego serwera tylko do lekkiego/osobistego ruchu — przy
+  // większej skali przesiądź się na dostawcę z własnym kluczem (MapTiler, Stadia Maps)
+  // albo hostuj kafelki samodzielnie.
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  new LocateControl().addTo(map);
+  // legenda kolorów przystanków (lewy dolny róg, obok atrybucji)
+  const Legend = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd() {
+      const el = L.DomUtil.create('div', 'stop-legend');
+      el.innerHTML = `<span><i style="border-color:${STOP_TRAM}"></i>tramwaj</span><span><i style="border-color:${STOP_BUS}"></i>autobus</span>`;
+      L.DomEvent.disableClickPropagation(el);
+      return el;
+    },
+  });
+  new Legend().addTo(map);
+
+  stopMarkers = STOPS.map(s => {
+    const m = L.circleMarker([s.lat, s.lon], { ...baseStopStyle(s), bubblingMouseEvents: false }).addTo(map);
+    m.on('mouseover', () => showStopHover(s));
+    m.on('mouseout', () => stopMouseOut(s));
+    m.on('click', () => {
+      if (selectedRouteKey && !targetClickMode()) selectRoute(selectedRouteKey);   // przystanek spoza trasy: chowamy trasę
+      stopClicked(s);
+    });
+    return m;
+  });
+
+  // Mapa tylko w obszarze danych: prostokąt wszystkich przystanków + margines. Nie da się jej przesunąć
+  // poza niego, a najmniejsze przybliżenie to takie, przy którym widać cały obszar (zależy od ekranu).
+  const dataBounds = L.latLngBounds(STOPS.map(s => [s.lat, s.lon])).pad(0.06);
+  map.setMaxBounds(dataBounds);
+  map.options.maxBoundsViscosity = 1;   // twarda krawędź, bez "gumowego" odbicia
+  const fitMinZoom = () => map.setMinZoom(Math.max(8, map.getBoundsZoom(dataBounds, false)));
+  fitMinZoom();
+  map.on('resize', fitMinZoom);
+
+  radiusInput.addEventListener('input', () => setRadius(parseInt(radiusInput.value, 10), true));
+
+  map.createPane('hover').style.zIndex = 640;
+  map.getPane('hover').classList.add('leaflet-hover-pane');
+  // Klik w mapę: w trybie zasięgu (albo po "Wskaż cel") wskazuje cel podróży, inaczej wybiera nowe miejsce.
+  // Każdy klik coś robi — nie ma kliknięć, które tylko chowają poprzedni widok.
+  map.on('click', (e) => {
+    if (targetClickMode()) { setTarget(e.latlng.lat, e.latlng.lng, null, false); return; }
+    if (selectedRouteKey) selectRoute(selectedRouteKey);
+    selectPoint(e.latlng);
+  });
+  map.on('movestart zoomstart', () => { hideStopHover(); hidePointHover(); });
+  const zoomCls = () => map.getContainer().classList.toggle('z-lo', map.getZoom() < 16);
+  zoomCls();
+  map.on('zoomend', () => { restyleStops(); zoomCls(); if (selectedRouteKey) styleVariants(); });   // kropki i trasa rosną z przybliżeniem
+  map.on('mousemove', e => {
+    if (!iso || !iso.walk) return;
+    cancelAnimationFrame(pointRaf);
+    pointRaf = requestAnimationFrame(() => pointHover(e.latlng));
+  });
+  // mouseleave samego kontenera (mapowe 'mouseout' odpala się też między elementami wewnątrz mapy)
+  map.getContainer().addEventListener('mouseleave', () => { cancelAnimationFrame(pointRaf); hidePointHover(); });
+
+}
+
+// ---------------------------------------------------------------------------
+// Hover na przystanku: sprężysta kropka + pulsujący pierścień + karta z liniami.
+// Rysowane jako HTML w osobnej warstwie nad płótnem (canvas nie animuje CSS).
+// ---------------------------------------------------------------------------
+let hoverLayer = null;
+// Po kliknięciu przystanku jego karta nie wraca, dopóki kursor go nie opuści (panel pokazuje to samo).
+let hoverMute = null;
+function stopMouseOut(s) {
+  if (hoverMute === s.name) hoverMute = null;
+  hideStopHover();
+}
+function stopClicked(s) {
+  hoverMute = s.name;
+  hideStopHover();
+  if (targetClickMode()) { setTarget(s.lat, s.lon, s.name, false); return; }
+  selectStop(s);
+}
+function showStopHover(s) {
+  if (hoverMute === s.name) return;
+  hideStopHover();
+  if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
+  stopHoverOn = true;
+  const hasTram = s.lines.some(l => l.type === 'tram');
+  const hasBus = s.lines.some(l => l.type === 'bus');
+  const c = hasTram && !hasBus ? 'var(--tram)' : hasBus && !hasTram ? 'var(--bus)' : 'var(--accent)';
+
+  // wszystkie słupki tej nazwy w pobliżu — linie i podświetlenie
+  const sibs = STOPS.filter(x => x.name === s.name && x.id !== s.id && haversineMeters(s.lat, s.lon, x.lat, x.lon) <= 400);
+  const lines = new Map();
+  [s, ...sibs].forEach(x => x.lines.forEach(l => lines.set(`${l.ref}|${l.type}`, l)));
+  const sorted = [...lines.values()].sort((a, b) =>
+    (a.type !== b.type ? (a.type === 'tram' ? -1 : 1) : a.ref.localeCompare(b.ref, 'pl', { numeric: true })));
+  // tramwaje i autobusy w osobnych rzędach; przy dużych węzłach ucinamy każdą grupę osobno
+  const MAX = 16;
+  const group = (arr, cls) => arr.length ? '<div class="sh-chips">' +
+    arr.slice(0, MAX).map(l => `<span class="${cls}">${esc(l.ref)}</span>`).join('') +
+    (arr.length > MAX ? `<span class="more">+${arr.length - MAX}</span>` : '') + '</div>' : '';
+  const chips = group(sorted.filter(l => l.type === 'tram'), 't') + group(sorted.filter(l => l.type !== 'tram'), 'b');
+  const nT = sorted.filter(l => l.type === 'tram').length, nB = sorted.length - nT;
+  const meta = [nT && `${nT} tram.`, nB && `${nB} aut.`].filter(Boolean).join(' · ');
+
+  const cp = map.latLngToContainerPoint([s.lat, s.lon]), mw = map.getSize().x;
+  const below = cp.y < 150;
+  const side = cp.x < 150 ? ' al' : cp.x > mw - 150 ? ' ar' : '';
+  const icon = L.divIcon({
+    className: '', iconSize: [0, 0],
+    html: `<div class="sh${below ? ' below' : ''}${side}" style="--sh-c:${c}">
+      <div class="sh-ring"></div><div class="sh-dot"></div>
+      <div class="sh-tip${iso ? ' wide' : ''}"><div class="sh-name">${esc(s.name)}</div>
+        <div class="sh-meta">${meta}</div>
+        ${chips}
+        ${isoCardLine(s, sibs)}${!stopMode && pointReach && pointReach.get(s.id) === null ? '<div class="sh-unreach">Brak dojścia pieszo z zaznaczonego miejsca</div>' : ''}</div></div>`
+  });
+  const sibIcon = L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="sh" style="--sh-c:${c}"><div class="sh-sib"></div></div>` });
+  hoverLayer = L.layerGroup([
+    ...sibs.map(x => L.marker([x.lat, x.lon], { icon: sibIcon, interactive: false, pane: 'hover', keyboard: false })),
+    L.marker([s.lat, s.lon], { icon, interactive: false, pane: 'hover', keyboard: false, zIndexOffset: 1000 }),
+  ]).addTo(map);
+}
+// ---------------------------------------------------------------------------
+// Mapa zasięgu: "gdzie dojadę w N minut z tego przystanku"
+// Model: jazda wg czasów z rozkładu + średnie czekanie (połowa odstępu kursów w dzień
+// roboczy 6–20) + przesiadki pieszo do 500 m. Dijkstra po przystankach.
+// ---------------------------------------------------------------------------
+const ISO_RAMP = ['#104281', '#1c5cab', '#2a78d6', '#5598e7', '#86b6ef'];  // blisko -> daleko
+const WALK_MPM = 58;          // m/min w linii prostej (~4,5 km/h × objazd 1,3)
+const WALK_MAX = 500;         // maks. dojście / przesiadka piesza
+const WAIT_MAX = Infinity;   // połowa odstępu kursów, bez limitu: rzadkie linie nie są "za kwadrans"
+let iso = null;               // {origin, T, labels: Map(id -> {t, prev, ti, from, to, walk})}
+let isoT = 20;
+let isoGraph = null;
+let isoLayer = null, isoRenderer = null, isoPathLayer = null;
+
+// Skąd liczymy: wybrany przystanek (start 0 min) albo zaznaczony punkt. Z punktu idziemy pieszo
+// po ulicach bez limitu okręgu (promień z suwaka dotyczy tylko listy linii w pobliżu).
+// poles = przystanki do ORIGIN_WALK_M w linii prostej: start trybu "wyjazd o godzinie" i trybu bez walk.bin.
+const ORIGIN_WALK_M = 2000;
+function isoOrigin() {
+  if (stopMode) {
+    return { name: stopMode.name, lat: stopMode.lat, lon: stopMode.lon,
+             poles: stopMode.poles.map(p => ({ id: p.id, t0: 0 })) };
+  }
+  if (radiusCircle) {
+    const c = radiusCircle.getLatLng();
+    const poles = STOPS.map(x => ({ id: x.id, d: haversineMeters(c.lat, c.lng, x.lat, x.lon) }))
+      .filter(x => x.d <= ORIGIN_WALK_M).map(x => ({ id: x.id, t0: x.d / WALK_MPM }));
+    return { name: 'zaznaczony punkt', lat: c.lat, lon: c.lng, poles, point: true, walkMax: ORIGIN_WALK_M };
+  }
+  return null;
+}
+const originKey = o => `${o.point ? 'p' : 's'}:${o.lat.toFixed(5)},${o.lon.toFixed(5)}`;
+
+function buildIsoGraph() {
+  const trips = [], board = new Map();
+  Object.entries(ROUTES).forEach(([key, r]) => (r.trips || []).forEach(t => {
+    if (!t || !t.s || !(t.hw || t.hwS || t.hwN)) return;
+    const s = t.s.filter(([id, off]) => off != null && STOP_BY_ID.has(id));
+    if (s.length < 2) return;
+    const ti = trips.length;
+    const hws = { w: t.hw, s: t.hwS, n: t.hwN };
+    trips.push({ key, h: t.h, hws, wait: hws.w ? Math.min(Math.max(hws.w / 2, 1), WAIT_MAX) : Infinity, s });
+    s.forEach(([id], pos) => {
+      if (pos === s.length - 1) return;
+      if (!board.has(id)) board.set(id, []);
+      board.get(id).push([ti, pos]);
+    });
+  }));
+  // sąsiedzi pieszo: siatka ~0,005°
+  const G = 0.005, grid = new Map();
+  const gk = (a, b) => a + ',' + b;
+  STOPS.forEach(s => {
+    const k = gk(Math.floor(s.lat / G), Math.floor(s.lon / G));
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push(s);
+  });
+  const walk = new Map();
+  STOPS.forEach(s => {
+    const gy = Math.floor(s.lat / G), gx = Math.floor(s.lon / G), out = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) {
+      (grid.get(gk(gy + dy, gx + dx)) || []).forEach(o => {
+        if (o.id === s.id) return;
+        const d = haversineMeters(s.lat, s.lon, o.lat, o.lon);
+        if (d <= WALK_MAX) out.push([o.id, d]);
+      });
+    }
+    walk.set(s.id, out);
+  });
+  return { trips, board, walk };
+}
+
+// prosty kopiec binarny [t, id]
+function heapPush(h, x) { h.push(x); let i = h.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (h[p][0] <= h[i][0]) break; [h[p], h[i]] = [h[i], h[p]]; i = p; } }
+function heapPop(h) {
+  const top = h[0], last = h.pop();
+  if (h.length) { h[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i;
+    if (l < h.length && h[l][0] < h[m][0]) m = l; if (r < h.length && h[r][0] < h[m][0]) m = r;
+    if (m === i) break; [h[m], h[i]] = [h[i], h[m]]; i = m; } }
+  return top;
+}
+
+function runIso(origin, T) {
+  const originPoles = origin.poles;
+  if (!isoGraph) isoGraph = buildIsoGraph();
+  const { trips, board, walk } = isoGraph;
+  const labels = new Map(), heap = [];
+  const relax = (id, t, lab) => {
+    if (t > T) return;
+    const cur = labels.get(id);
+    if (cur && cur.t <= t) return;
+    labels.set(id, { t, ...lab });
+    heapPush(heap, [t, id]);
+  };
+  originPoles.forEach(p => relax(p.id, p.t0 || 0, { prev: null, origin: true }));
+  while (heap.length) {
+    const [t, id] = heapPop(heap);
+    const lab = labels.get(id);
+    if (!lab || lab.t < t) continue;
+    if (!lab.walk) {                          // bez łańcuchów spacerów
+      (walk.get(id) || []).forEach(([o, d]) => relax(o, t + d / WALK_MPM, { prev: id, walk: true }));
+    }
+    (board.get(id) || []).forEach(([ti, pos]) => {
+      const tr = trips[ti], base = tr.s[pos][1], t0 = t + tr.wait;
+      for (let j = pos + 1; j < tr.s.length; j++) {
+        const nt = t0 + (tr.s[j][1] - base);
+        if (nt > T) break;
+        relax(tr.s[j][0], nt, { prev: id, ti, from: pos, to: j });
+      }
+    });
+  }
+  return labels;
+}
+
+// ---------------------------------------------------------------------------
+// Sieć piesza z OSM (walk.bin). Gdy jest, zasięg liczymy jednym Dijkstrą po ulicach
+// i liniach naraz: chodzenie po prawdziwych drogach, przystanek "przyklejony" do ulicy.
+// Bez pliku — przybliżenie linią prostą × objazd (powyżej).
+// ---------------------------------------------------------------------------
+const WALK_SPEED = 75;        // m/min po ulicach (~4,5 km/h)
+let WALK = null;              // null = nie wczytano, false = brak pliku, obiekt = graf
+
+let walkPromise = null;
+function loadWalk() {
+  if (WALK !== null) return Promise.resolve(WALK);
+  if (!walkPromise) {
+    setLoading('walk', 'Wczytuję sieć ulic…');
+    walkPromise = loadWalkInner().finally(() => setLoading('walk', null));
+  }
+  return walkPromise;
+}
+async function loadWalkInner() {
+  if (!META || !META.walk) { WALK = false; return WALK; }
+  try {
+    const res = await fetch('./' + META.walk.path);
+    if (!res.ok) throw new Error(res.status);
+    const buf = await res.arrayBuffer();
+    const h = new Uint32Array(buf, 0, 4);
+    if (h[0] !== 0x314B4C57) throw new Error('zły format');
+    const N = h[1], E = h[2], G = h[3];
+    let o = 16;
+    const nodes = new Int32Array(buf, o, 2 * N); o += 8 * N;
+    const ends = new Uint32Array(buf, o, 2 * E); o += 8 * E;
+    const goff = new Uint32Array(buf, o, E + 1); o += 4 * (E + 1);
+    const geom = new Int32Array(buf, o, 2 * G); o += 8 * G;
+    const len = new Uint16Array(buf, o, E);
+    // sąsiedztwo (CSR)
+    const adjStart = new Uint32Array(N + 1);
+    for (let e = 0; e < E; e++) { adjStart[ends[2 * e] + 1]++; adjStart[ends[2 * e + 1] + 1]++; }
+    for (let i = 0; i < N; i++) adjStart[i + 1] += adjStart[i];
+    const fill = adjStart.slice(0, N), adjE = new Uint32Array(2 * E);
+    for (let e = 0; e < E; e++) { adjE[fill[ends[2 * e]]++] = e; adjE[fill[ends[2 * e + 1]]++] = e; }
+    // przystanki <-> węzły
+    const S = STOPS.length, snapNode = new Int32Array(S).fill(-1), snapLen = new Float32Array(S);
+    const nsStart = new Uint32Array(N + 1);
+    STOPS.forEach((st, k) => { if (st.w && st.w[0] < N) { snapNode[k] = st.w[0]; snapLen[k] = st.w[1]; nsStart[st.w[0] + 1]++; } });
+    for (let i = 0; i < N; i++) nsStart[i + 1] += nsStart[i];
+    const nsFill = nsStart.slice(0, N), nsStop = new Uint32Array(nsStart[N]);
+    for (let k = 0; k < S; k++) if (snapNode[k] >= 0) nsStop[nsFill[snapNode[k]]++] = k;
+    // siatka węzłów do szukania najbliższego ulicy punktu kliknięcia
+    const GC = 0.003, grid = new Map();
+    for (let i = 0; i < N; i++) {
+      const key = Math.floor(nodes[2 * i] / 1e6 / GC) + ',' + Math.floor(nodes[2 * i + 1] / 1e6 / GC);
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+    }
+    WALK = { N, E, nodes, ends, goff, geom, len, adjStart, adjE, snapNode, snapLen, nsStart, nsStop, grid, GC };
+  } catch (err) {
+    console.warn('Brak sieci pieszej, zasięg w przybliżeniu:', err);
+    WALK = false;
+  }
+  return WALK;
+}
+
+const STOP_INDEX = () => (STOP_INDEX._m ||= new Map(STOPS.map((s, k) => [s.id, k])));
+
+function nearestNode(lat, lon) {
+  const W = WALK, cy = Math.floor(lat / W.GC), cx = Math.floor(lon / W.GC);
+  let best = -1, bd = Infinity;
+  for (let r = 1; r <= 3 && best < 0; r++) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      (W.grid.get((cy + dy) + ',' + (cx + dx)) || []).forEach(i => {
+        const d = haversineMeters(lat, lon, W.nodes[2 * i] / 1e6, W.nodes[2 * i + 1] / 1e6);
+        if (d < bd) { bd = d; best = i; }
+      });
+    }
+  }
+  return best < 0 ? null : { node: best, d: bd };
+}
+
+// Kolejka priorytetowa na tablicach typowanych (bez tworzenia obiektów w pętli)
+class TypedHeap {
+  constructor(cap = 4096) { this.k = new Float64Array(cap); this.v = new Int32Array(cap); this.n = 0; }
+  push(key, val) {
+    if (this.n === this.k.length) {
+      const k = new Float64Array(this.n * 2), v = new Int32Array(this.n * 2);
+      k.set(this.k); v.set(this.v); this.k = k; this.v = v;
+    }
+    const K = this.k, V = this.v;
+    let i = this.n++;
+    while (i > 0) { const p = (i - 1) >> 1; if (K[p] <= key) break; K[i] = K[p]; V[i] = V[p]; i = p; }
+    K[i] = key; V[i] = val;
+  }
+  pop() {   // zwraca wartość; klucz w this.top
+    const K = this.k, V = this.v, val = V[0];
+    this.top = K[0];
+    const n = --this.n;
+    if (n > 0) {
+      const key = K[n], v = V[n];
+      let i = 0;
+      for (;;) {
+        let c = 2 * i + 1;
+        if (c >= n) break;
+        if (c + 1 < n && K[c + 1] < K[c]) c++;
+        if (K[c] >= key) break;
+        K[i] = K[c]; V[i] = V[c]; i = c;
+      }
+      K[i] = key; V[i] = v;
+    }
+    return val;
+  }
+}
+
+// Przejazdy w postaci indeksów (raz): przystanek -> [kurs, pozycja], kurs -> indeksy przystanków i czasy
+function tripIndex() {
+  if (!isoGraph) isoGraph = buildIsoGraph();
+  if (isoGraph.tsi) return isoGraph;
+  const SI = STOP_INDEX(), S = STOPS.length;
+  isoGraph.tsi = isoGraph.trips.map(tr => Int32Array.from(tr.s.map(([id]) => SI.get(id))));
+  isoGraph.tof = isoGraph.trips.map(tr => Float64Array.from(tr.s.map(x => x[1])));
+  const cnt = new Uint32Array(S + 1);
+  isoGraph.tsi.forEach(si => { for (let p = 0; p < si.length - 1; p++) cnt[si[p] + 1]++; });
+  for (let i = 0; i < S; i++) cnt[i + 1] += cnt[i];
+  const fill = cnt.slice(0, S), bT = new Int32Array(cnt[S]), bP = new Int16Array(cnt[S]);
+  isoGraph.tsi.forEach((si, ti) => { for (let p = 0; p < si.length - 1; p++) { const j = fill[si[p]]++; bT[j] = ti; bP[j] = p; } });
+  Object.assign(isoGraph, { bStart: cnt, bT, bP });
+  return isoGraph;
+}
+
+// Dijkstra po węzłach ulic (0..N-1) i przystankach (N..N+S-1)
+function walkDijkstra(seeds, T, opts = {}) {
+  const W = WALK, N = W.N, S = STOPS.length, M = N + S;
+  const G = tripIndex(), trips = G.trips;
+  const time = new Float64Array(M).fill(Infinity);   // Float64: porównanie z kolejką musi być dokładne
+  const prev = new Int32Array(M).fill(-1), kind = new Int8Array(M), via = new Int32Array(M);
+  const rFrom = new Int16Array(M), rTo = new Int16Array(M), noWalk = new Uint8Array(M);
+  const heap = new TypedHeap(1 << 16);
+  const relax = (v, t, u, k, x, f, g) => {
+    if (t > T || t >= time[v]) return;
+    time[v] = t; prev[v] = u; kind[v] = k; via[v] = x;
+    if (k === 3) { rFrom[v] = f; rTo[v] = g; }
+    heap.push(t, v);
+  };
+  seeds.forEach(sd => { relax(sd.v, sd.t, -1, 0, 0); if (sd.noWalk) noWalk[sd.v] = 1; });
+  const walkOnly = !!opts.walkOnly, noRide = !!opts.noRide;
+  const { adjStart, adjE, ends, len, nsStart, nsStop, snapNode, snapLen } = W;
+  const { bStart, bT, bP, tsi, tof } = G;
+  while (heap.n) {
+    const u = heap.pop(), t = heap.top;
+    if (t > time[u]) continue;
+    if (u < N) {
+      for (let i = adjStart[u]; i < adjStart[u + 1]; i++) {
+        const e = adjE[i], v = ends[2 * e] === u ? ends[2 * e + 1] : ends[2 * e];
+        relax(v, t + len[e] / WALK_SPEED, u, 1, e);
+      }
+      if (!walkOnly) for (let i = nsStart[u]; i < nsStart[u + 1]; i++) {
+        const k = nsStop[i];
+        relax(N + k, t + snapLen[k] / WALK_SPEED, u, 2, 0);
+      }
+    } else {
+      const k = u - N;
+      if (!noWalk[u] && snapNode[k] >= 0) relax(snapNode[k], t + snapLen[k] / WALK_SPEED, u, 2, 0);
+      if (noRide) continue;
+      for (let b = bStart[k]; b < bStart[k + 1]; b++) {
+        const ti = bT[b], pos = bP[b], si = tsi[ti], of = tof[ti];
+        const base = of[pos], t0 = t + trips[ti].wait;
+        for (let j = pos + 1; j < si.length; j++) {
+          const nt = t0 + (of[j] - base);
+          if (nt > T) break;
+          relax(N + si[j], nt, u, 3, ti, pos, j);
+        }
+      }
+    }
+  }
+  return { time, prev, kind, via, rFrom, rTo };
+}
+
+// dojście z zaznaczonego punktu: walk1 (ulicami) + czasy dojścia do przystanków w okręgu
+function originWalk(o, T) {
+  const W = WALK, SI = STOP_INDEX();
+  const nn = nearestNode(o.lat, o.lon);
+  const t0 = nn ? nn.d / WALK_SPEED : 0;
+  // samo chodzenie liczymy do 40 min (~3 km) — dalej i tak wygrywa przejazd, a to skraca tryb czasu o ~1/4
+  const walk1 = nn ? walkDijkstra([{ v: nn.node, t: t0 }], Math.min(T, 40), { walkOnly: true }) : null;
+  const tw = new Map();
+  o.poles.forEach(p => {
+    const k = SI.get(p.id), sn = W.snapNode[k];
+    let t = null;
+    if (walk1 && sn >= 0) { if (isFinite(walk1.time[sn])) t = walk1.time[sn] + W.snapLen[k] / WALK_SPEED; }
+    else t = p.t0 * 1.3;
+    p.tw = t;
+    if (t != null && t <= T) tw.set(k, t);
+  });
+  return { walk1, tw, areaMax: Infinity };   // chodzenie z punktu bez limitu okręgu (tylko limit czasu)
+}
+function mergeWalkArea(res, ow) {
+  const N = WALK.N, w1 = ow.walk1;
+  if (!w1) return;
+  for (let v = 0; v < N; v++) if (w1.time[v] <= ow.areaMax && w1.time[v] < res.time[v]) {
+    res.time[v] = w1.time[v]; res.prev[v] = w1.prev[v]; res.kind[v] = w1.kind[v]; res.via[v] = w1.via[v];
+  }
+}
+
+function runIsoWalk(o, T) {
+  const W = WALK, N = W.N, SI = STOP_INDEX();
+  let res, walk1 = null;
+  const originStops = new Set(o.poles.map(p => p.id));
+  if (o.point) {
+    // jeden Dijkstra od ulicy najbliższej kliknięciu: chodzenie i przejazdy naraz, bez limitu okręgu
+    const nn = nearestNode(o.lat, o.lon);
+    if (nn) res = walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], T);
+    else {   // kliknięcie z dala od sieci ulic: start z przystanków w pobliżu (linia prosta × 1,3)
+      const seeds = o.poles.filter(p => p.t0 * 1.3 <= T).map(p => ({ v: N + SI.get(p.id), t: p.t0 * 1.3 }));
+      res = walkDijkstra(seeds, T);
+    }
+  } else {
+    res = walkDijkstra(o.poles.map(p => ({ v: N + SI.get(p.id), t: 0 })), T);
+  }
+  // etykiety przystanków w formacie wspólnym z trybem przybliżonym
+  const labels = new Map();
+  STOPS.forEach((st, k) => {
+    const t = res.time[N + k];
+    if (t <= T) labels.set(st.id, { t, origin: originStops.has(st.id) && res.prev[N + k] < 0 });
+  });
+  return { labels, res, walk1 };
+}
+
+function edgePoints(e, reverse) {
+  const W = WALK, a = W.ends[2 * e], b = W.ends[2 * e + 1];
+  const pts = [[W.nodes[2 * a] / 1e6, W.nodes[2 * a + 1] / 1e6]];
+  for (let i = W.goff[e]; i < W.goff[e + 1]; i++) pts.push([W.geom[2 * i] / 1e6, W.geom[2 * i + 1] / 1e6]);
+  pts.push([W.nodes[2 * b] / 1e6, W.nodes[2 * b + 1] / 1e6]);
+  return reverse ? pts.reverse() : pts;
+}
+
+// fragment łamanej od początku o długości frac (0..1) jej długości
+function cutPoints(pts, frac) {
+  if (frac >= 1) return pts;
+  const seg = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) { const d = haversineMeters(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]); seg.push(d); total += d; }
+  let left = frac * total;
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    if (left >= seg[i - 1]) { out.push(pts[i]); left -= seg[i - 1]; continue; }
+    const f = seg[i - 1] ? left / seg[i - 1] : 0;
+    out.push([pts[i - 1][0] + f * (pts[i][0] - pts[i - 1][0]), pts[i - 1][1] + f * (pts[i][1] - pts[i - 1][1])]);
+    break;
+  }
+  return out;
+}
+
+
+// indeks przestrzenny krawędzi (komórki ~0,01°), budowany raz
+function edgeIndex() {
+  const W = WALK;
+  if (W.eidx) return W.eidx;
+  const C = 0.01, cells = new Map();
+  const add = (key, e) => { let a = cells.get(key); if (!a) cells.set(key, a = []); a.push(e); };
+  for (let e = 0; e < W.E; e++) {
+    const a = W.ends[2 * e], b = W.ends[2 * e + 1];
+    let la0 = Math.min(W.nodes[2 * a], W.nodes[2 * b]), la1 = Math.max(W.nodes[2 * a], W.nodes[2 * b]);
+    let lo0 = Math.min(W.nodes[2 * a + 1], W.nodes[2 * b + 1]), lo1 = Math.max(W.nodes[2 * a + 1], W.nodes[2 * b + 1]);
+    for (let i = W.goff[e]; i < W.goff[e + 1]; i++) {
+      la0 = Math.min(la0, W.geom[2 * i]); la1 = Math.max(la1, W.geom[2 * i]);
+      lo0 = Math.min(lo0, W.geom[2 * i + 1]); lo1 = Math.max(lo1, W.geom[2 * i + 1]);
+    }
+    for (let y = Math.floor(la0 / 1e6 / C); y <= Math.floor(la1 / 1e6 / C); y++)
+      for (let x = Math.floor(lo0 / 1e6 / C); x <= Math.floor(lo1 / 1e6 / C); x++) add(y * 100000 + x, e);
+  }
+  W.eidx = { C, cells, stamp: new Uint32Array(W.E), gen: 0 };
+  return W.eidx;
+}
+
+// Web Mercator -> piksele świata przy danym zoomie
+const mercX = (lon, s) => (lon + 180) / 360 * s;
+const mercY = (lat, s) => { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * s; };
+
+// rysuje zasięg na jednym kafelku: tylko ulice z tego fragmentu, jedno pociągnięcie na pasmo
+function drawIsoTile(canvas, coords, size) {
+  if (!iso || !iso.walk) return;
+  const W = WALK, t = iso.res.time, bands = iso.bands, T = iso.T;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = size * dpr; canvas.height = size * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const z = coords.z, S = 256 * Math.pow(2, z), ox = coords.x * size, oy = coords.y * size;
+  const latC = 90 - 360 * Math.atan(Math.exp(((oy + size / 2) / S * 2 - 1) * Math.PI)) / Math.PI;
+  const mpp = 156543.03 * Math.cos(latC * Math.PI / 180) / Math.pow(2, z);
+  const wpx = Math.max(4, Math.min(34, 110 / mpp)), pad = wpx;
+  // zasięg kafelka w stopniach (+ margines na grubość linii)
+  const lon0 = (ox - pad) / S * 360 - 180, lon1 = (ox + size + pad) / S * 360 - 180;
+  const toLat = y => 90 - 360 * Math.atan(Math.exp((y / S * 2 - 1) * Math.PI)) / Math.PI;
+  const lat1 = toLat(oy - pad), lat0 = toLat(oy + size + pad);
+  const idx = edgeIndex(), C = idx.C, gen = ++idx.gen;
+  const paths = bands.map(() => new Path2D());
+  const P = (lat, lon) => [mercX(lon, S) - ox, mercY(lat, S) - oy];
+  const line = (path, pts) => {
+    let p = P(pts[0][0], pts[0][1]); path.moveTo(p[0], p[1]);
+    for (let i = 1; i < pts.length; i++) { p = P(pts[i][0], pts[i][1]); path.lineTo(p[0], p[1]); }
+  };
+  for (let y = Math.floor(lat0 / C); y <= Math.floor(lat1 / C); y++) {
+    for (let x = Math.floor(lon0 / C); x <= Math.floor(lon1 / C); x++) {
+      const list = idx.cells.get(y * 100000 + x);
+      if (!list) continue;
+      for (let n = 0; n < list.length; n++) {
+        const e = list[n];
+        if (idx.stamp[e] === gen) continue;
+        idx.stamp[e] = gen;
+        const a = W.ends[2 * e], zz = W.ends[2 * e + 1], ta = t[a], tz = t[zz];
+        if (!(ta < T) && !(tz < T)) continue;
+        const L = W.len[e];
+        let full = null;
+        for (let bi = 0; bi < bands.length; bi++) {
+          const hi = bands[bi].hi;
+          const ra = ta < hi ? (hi - ta) * WALK_SPEED : 0, rz = tz < hi ? (hi - tz) * WALK_SPEED : 0;
+          if (ra <= 1 && rz <= 1) continue;
+          // cała ulica w tym paśmie: dalsze pasma i tak zasłoni (bliższe malowane na wierzchu)
+          if (ra + rz >= L) { line(paths[bi], full || (full = edgePoints(e, false))); break; }
+          if (ra > 1) line(paths[bi], cutPoints(edgePoints(e, false), ra / L));
+          if (rz > 1) line(paths[bi], cutPoints(edgePoints(e, true), rz / L));
+        }
+      }
+    }
+  }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = wpx;
+  for (let bi = bands.length - 1; bi >= 0; bi--) { ctx.strokeStyle = bands[bi].color; ctx.stroke(paths[bi]); }
+}
+
+const IsoTiles = L.GridLayer.extend({
+  createTile(coords) {
+    const tile = document.createElement('canvas');
+    const size = this.getTileSize().x;
+    drawIsoTile(tile, coords, size);
+    return tile;
+  },
+});
+
+function drawIsoWalk() {
+  isoLayer = new IsoTiles({ pane: 'iso', updateWhenZooming: false, keepBuffer: 4, tileSize: 256 }).addTo(map);
+}
+
+
+// kolejne etapy dojazdu do przystanku (tryb ulic): piesze z geometrią ulic + przejazdy
+function walkLegs(stopId, C = iso) { return walkLegsFrom(WALK.N + STOP_INDEX().get(stopId), C); }
+
+// Etapy dojazdu do wierzchołka v (węzeł ulicy albo przystanek): przejścia piesze z geometrią
+// ulic i czasem, przejazdy. W trybie punktu doklejamy dojście z klikniętego miejsca.
+// C = kontekst obliczenia: `iso` (mapa zasięgu) albo `reach` (dojazdy do celów), oba {o, res, walk1, csa}.
+function walkLegsFrom(v0, C = iso) {
+  const W = WALK, N = W.N, r = C.res;
+  const P = x => x < N ? [W.nodes[2 * x] / 1e6, W.nodes[2 * x + 1] / 1e6] : [STOPS[x - N].lat, STOPS[x - N].lon];
+  const legs = [];
+  let walkPts = null, walkEnd = 0;
+  const addWalk = (seg, tEnd) => {
+    if (!walkPts) { walkPts = seg; walkEnd = tEnd; } else walkPts = seg.concat(walkPts.slice(1));
+  };
+  const flush = tStart => {
+    if (walkPts) { legs.unshift({ walk: true, pts: walkPts, min: walkEnd - tStart }); walkPts = null; }
+  };
+  let v = v0, R = r, guard = 0;
+  while (guard++ < 50000) {
+    const u = R.prev[v];
+    if (u < 0) {
+      if (C.csa && v >= N && R === r) {
+        flush(R.time[v]);
+        legs.unshift(...csaLegs(v - N, C));
+        return legs;
+      }
+      if (C.o.point) {
+        // przystanek startowy: dojście ulicami z punktu (walk1), potem linia prosta do kliknięcia
+        if (v >= N && R === r && C.walk1) {
+          const sn = W.snapNode[v - N];
+          if (sn >= 0 && isFinite(C.walk1.time[sn])) { addWalk([P(sn), P(v)], R.time[v]); R = C.walk1; v = sn; continue; }
+        }
+        addWalk([[C.o.lat, C.o.lon], P(v)], R.time[v]);
+        flush(0);
+      } else {
+        flush(R.time[v]);
+      }
+      break;
+    }
+    const k = R.kind[v];
+    if (k === 3) {
+      flush(R.time[v]);
+      legs.unshift({ ti: R.via[v], from: R.rFrom[v], to: R.rTo[v] });
+    } else if (k === 1) {
+      const e = R.via[v];
+      addWalk(edgePoints(e, W.ends[2 * e] !== u), R.time[v]);
+    } else {
+      addWalk([P(u), P(v)], R.time[v]);
+    }
+    v = u;
+  }
+  flush(0);
+  return legs;
+}
+
+// ===========================================================================
+// Tryb "wyjazd o godzinie": Connection Scan po prawdziwych odjazdach z conns/.
+// Jedno przejście po połączeniach posortowanych po odjeździe (kilka ms), potem
+// ten sam Dijkstra pieszy co w trybie typowym rysuje obszar od osiągniętych przystanków.
+// ===========================================================================
+const TRANSFER_MIN = 1;         // zapas na przesiadkę z pojazdu na pojazd (min)
+let TRANSFERS = null;           // przesiadki piesze między przystankami (transfers.bin)
+const connCache = new Map();    // "p_chunk" -> Promise<Uint16Array>
+
+async function loadTransfers() {
+  if (TRANSFERS !== null) return TRANSFERS;
+  try {
+    const buf = await (await fetch('./' + META.walk.transfers)).arrayBuffer();
+    const h = new Uint32Array(buf, 0, 3);
+    if (h[0] !== 0x31465254) throw new Error('format');
+    const S = h[1], M = h[2];
+    let o = 12;
+    const start = new Uint32Array(buf, o, S + 1); o += 4 * (S + 1);
+    const to = new Uint16Array(buf, o, M); o += 2 * M;
+    const m = new Uint16Array(buf, o, M);
+    TRANSFERS = { start, to, m };
+  } catch (e) { TRANSFERS = false; }
+  return TRANSFERS;
+}
+function loadConnFile(name) {
+  if (!connCache.has(name)) {
+    connCache.set(name, fetch(`./${META.conns.path}${name}.bin`)
+      .then(r => r.ok ? r.arrayBuffer() : new ArrayBuffer(0)).then(b => new Uint16Array(b)).catch(() => new Uint16Array(0)));
+  }
+  return connCache.get(name);
+}
+const timeModeAvailable = () => !!(META && META.conns && META.walk && META.walk.transfers);
+
+async function runCSA(o, ow, dateISO, t0, T) {
+  const prof = profileFor(dateISO);
+  if (!prof) return null;
+  const P = prof.p, W = META.conns.window;
+  const have = new Set(META.conns.chunks[String(P)] || []);
+  const ids = [];
+  for (let c = Math.floor(t0 / W); c <= Math.floor((t0 + T) / W); c++) if (have.has(c)) ids.push(c);
+  const [tripsTab, ...chunks] = await Promise.all([loadConnFile(`p${P}_trips`), ...ids.map(c => loadConnFile(`p${P}_${c}`))]);
+  const TR = await loadTransfers();
+  const S = STOPS.length, SI = STOP_INDEX(), nT = tripsTab.length / 2;
+  const arr = new Float64Array(S).fill(Infinity), board = new Float64Array(S).fill(Infinity);
+  const pk = new Int8Array(S), pa = new Int32Array(S).fill(-1), pb = new Int32Array(S).fill(-1), pd = new Int16Array(S);
+  const tripOn = new Int32Array(nT).fill(-1), tripDep = new Int16Array(nT);
+  const foot = (k, t) => {
+    if (!TR) return;
+    for (let i = TR.start[k]; i < TR.start[k + 1]; i++) {
+      const u = TR.to[i], tt = t + TR.m[i] / WALK_SPEED;
+      if (tt < arr[u]) { arr[u] = tt; board[u] = tt; pk[u] = 3; pa[u] = k; }
+    }
+  };
+  // start: przystanek (0 min, można przejść na sąsiedni słupek) albo przystanki z okręgu (dojście ulicami)
+  if (o.point) ow.tw.forEach((t, k) => { arr[k] = t0 + t; board[k] = arr[k]; pk[k] = 1; });
+  else o.poles.forEach(p => { const k = SI.get(p.id); arr[k] = t0; board[k] = t0; pk[k] = 1; });
+  if (!o.point) o.poles.forEach(p => foot(SI.get(p.id), t0));
+  const tEnd = t0 + T;
+  for (const C of chunks) {
+    for (let i = 0; i < C.length; i += 5) {
+      const dep = C[i + 2];
+      if (dep < t0) continue;
+      if (dep > tEnd) break;
+      const from = C[i], to = C[i + 1], a = C[i + 3], tr = C[i + 4];
+      if (tripOn[tr] < 0) {
+        if (board[from] > dep) continue;
+        tripOn[tr] = from; tripDep[tr] = dep;
+      }
+      if (a < arr[to] && a <= tEnd) {
+        arr[to] = a; board[to] = a + TRANSFER_MIN; pk[to] = 2; pa[to] = tr; pb[to] = tripOn[tr]; pd[to] = tripDep[tr];
+        foot(to, a);
+      }
+    }
+  }
+  return { P, approx: prof.approx, t0, arr, pk, pa, pb, pd, tripsTab, chunks };
+}
+
+async function runIsoTime(o, T, dateISO, t0) {
+  const N = WALK.N, SI = STOP_INDEX();
+  const ow = o.point ? originWalk(o, T) : null;
+  const csa = await runCSA(o, ow, dateISO, t0, T);
+  if (!csa) return null;
+  const seeds = [];
+  STOPS.forEach((st, k) => {
+    const rel = csa.arr[k] - t0;
+    if (rel <= T) seeds.push({ v: N + k, t: rel, noWalk: o.point && csa.pk[k] === 1 });
+  });
+  const res = walkDijkstra(seeds, T, { noRide: true });
+  if (ow) mergeWalkArea(res, ow);
+  const labels = new Map();
+  let rides = 0;
+  STOPS.forEach((st, k) => {
+    const t = res.time[N + k];
+    if (t <= T) {
+      labels.set(st.id, { t, origin: csa.pk[k] === 1 && res.prev[N + k] < 0 });
+      if (csa.pk[k] === 2) rides++;
+    }
+  });
+  return { labels, res, walk1: ow && ow.walk1, csa, rides };
+}
+
+// ścieżka pieszo po ulicach między przystankami (do rysowania przesiadki)
+const streetPathCache = new Map();
+function streetPath(ka, kb) {
+  const key = ka + '>' + kb;
+  if (streetPathCache.has(key)) return streetPathCache.get(key);
+  const W = WALK, a = W.snapNode[ka], b = W.snapNode[kb];
+  let pts = [[STOPS[ka].lat, STOPS[ka].lon], [STOPS[kb].lat, STOPS[kb].lon]];
+  if (a >= 0 && b >= 0) {
+    const r = walkDijkstra([{ v: a, t: 0 }], 12, { walkOnly: true });
+    if (isFinite(r.time[b])) pts = [[STOPS[ka].lat, STOPS[ka].lon], ...chainPts(r, b), [STOPS[kb].lat, STOPS[kb].lon]];
+  }
+  streetPathCache.set(key, pts);
+  return pts;
+}
+function chainPts(R, v) {
+  const W = WALK, N = W.N;
+  const P = x => x < N ? [W.nodes[2 * x] / 1e6, W.nodes[2 * x + 1] / 1e6] : [STOPS[x - N].lat, STOPS[x - N].lon];
+  let pts = [P(v)], g = 0;
+  while (R.prev[v] >= 0 && g++ < 50000) {
+    const u = R.prev[v];
+    const seg = R.kind[v] === 1 ? edgePoints(R.via[v], W.ends[2 * R.via[v]] !== u) : [P(u), P(v)];
+    pts = seg.concat(pts.slice(1));
+    v = u;
+  }
+  return pts;
+}
+
+// etapy przed przystankiem k w trybie "wyjazd o godzinie": przejazdy i przesiadki piesze
+function csaLegs(k, X = iso) {
+  const C = X.csa, out = [];
+  let g = 0;
+  while (g++ < 60) {
+    const kind = C.pk[k];
+    if (kind === 2) {
+      const b = C.pb[k];
+      out.unshift({ ride: true, ti: C.pa[k], from: b, to: k, dep: C.pd[k], arr: C.arr[k], wait: C.pd[k] - C.arr[b] });
+      k = b;
+    } else if (kind === 3) {
+      const f = C.pa[k];
+      out.unshift({ walk: true, pts: streetPath(f, k), min: C.arr[k] - C.arr[f] });
+      k = f;
+    } else {
+      if (X.o.point) {
+        const sn = WALK.snapNode[k];
+        const pts = X.walk1 && sn >= 0 && isFinite(X.walk1.time[sn]) ? chainPts(X.walk1, sn) : [[X.o.lat, X.o.lon]];
+        pts.unshift([X.o.lat, X.o.lon]);
+        pts.push([STOPS[k].lat, STOPS[k].lon]);
+        out.unshift({ walk: true, pts, min: C.arr[k] - C.t0 });
+      }
+      break;
+    }
+  }
+  return out;
+}
+function csaRideInfo(l, X = iso) {
+  const C = X.csa, key = META.conns.routes[C.tripsTab[2 * l.ti]], head = META.conns.heads[C.tripsTab[2 * l.ti + 1]];
+  if (!l.pts) {   // przystanki pośrednie z połączeń tego kursu
+    const seq = [l.from];
+    for (const ch of C.chunks) for (let i = 0; i < ch.length; i += 5) {
+      if (ch[i + 4] === l.ti && ch[i + 2] >= l.dep && ch[i + 3] <= l.arr) seq.push(ch[i + 1]);
+    }
+    l.pts = [...new Set(seq)].map(k => [STOPS[k].lat, STOPS[k].lon]);
+  }
+  return { key, head };
+}
+
+function isoBands(T) {
+  const w = [5, 10, 15, 20].find(x => Math.ceil(T / x) <= ISO_RAMP.length) || 20;
+  const n = Math.ceil(T / w);
+  const bands = [];
+  for (let i = 0; i < n; i++) {
+    const idx = n === 1 ? 0 : Math.round(i * (ISO_RAMP.length - 1) / (n - 1));
+    bands.push({ lo: i * w, hi: Math.min((i + 1) * w, T), color: ISO_RAMP[idx] });
+  }
+  return bands;
+}
+
+// Czasy dojścia nie zależą od limitu, więc liczymy raz do maksimum suwaka,
+// a zmiana czasu tylko filtruje i przerysowuje.
+const ISO_TMAX = 60;
+const REACH_T = 90;                            // typowy dzień: liczymy do 90 min (cele typu lotnisko)
+let isoMode = 'typical';                       // 'typical' | 'time'
+// Domyślnie dzień roboczy: przy ocenie miejsca liczą się dojazdy w tygodniu, nie dzisiejsza niedziela.
+let isoDay = 'w';
+let isoDate = null, isoTime = null;            // tryb czasu: data ISO i minuty od północy
+const DAY_NAMES = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela / święto' };
+function applyDayType(dt) {
+  if (!isoGraph) isoGraph = buildIsoGraph();
+  isoGraph.trips.forEach(tr => { const h = tr.hws[dt]; tr.wait = h ? Math.min(Math.max(h / 2, 1), WAIT_MAX) : Infinity; });
+}
+const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+
+async function recalcIso(o, T) {
+  if (WALK && isoMode === 'time' && timeModeAvailable()) {
+    if (!isoDate) isoDate = todayISO();
+    if (isoTime == null) isoTime = nowMinutes();
+    const r = await runIsoTime(o, ISO_TMAX, isoDate, isoTime);
+    if (r) return { o, T, ...r, walk: true, mode: 'time', bands: isoBands(T) };
+  }
+  if (WALK) {
+    const r = typicalRun(o);
+    return { o, T, labels: r.labels, res: r.res, walk1: r.walk1, walk: true, mode: 'typical', bands: isoBands(T) };
+  }
+  applyDayType(isoDay);
+  return { o, T, labels: runIso(o, ISO_TMAX), walk: false, mode: 'typical', bands: isoBands(T) };
+}
+// Typowy dzień z danego miejsca (do REACH_T min). Wspólne dla mapy zasięgu i listy celów,
+// więc włączenie zasięgu po wybraniu miejsca nic już nie liczy. Pamiętamy ostatni wynik.
+let typicalCache = null;
+function typicalRun(o) {
+  const key = originKey(o) + '|' + isoDay;
+  applyDayType(isoDay);   // czekanie w opisie etapów (legsText) musi pasować do typu dnia
+  if (typicalCache && typicalCache.key === key) return typicalCache.r;
+  const r = runIsoWalk(o, REACH_T);
+  typicalCache = { key, r };
+  return r;
+}
+function setIsoT(T) {
+  if (!iso) return;
+  iso.T = T;
+  iso.bands = isoBands(T);
+  if (iso.walk && isoLayer && isoLayer.redraw) isoLayer.redraw(); else drawIso();
+}
+
+async function computeIso() {
+  const o = isoOrigin();
+  if (!o) return;
+  // wybrana linia i podgląd zasłaniałyby obszar zasięgu
+  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  clearPreview();
+  if (WALK === null) {
+    const box = document.getElementById('iso-box');
+    if (box && !iso) box.innerHTML = '<div class="iso-card"><div class="muted">Wczytuję sieć pieszą…</div></div>';
+    await loadWalk();
+    if (!isoOrigin()) return;
+  }
+  setPicking(false);
+  if (!map.getPane('iso')) {
+    map.createPane('iso').style.zIndex = 350;
+    map.getPane('iso').classList.add('leaflet-iso-pane');
+    isoRenderer = L.canvas({ pane: 'iso', padding: 0.5 });
+  }
+  const token = ++isoToken;
+  const wasOn = !!iso;
+  const next = await recalcIso(o, isoT);
+  if (token !== isoToken) return;               // w międzyczasie zmieniono punkt/tryb
+  iso = next;
+  restyleStops();
+  drawIso();
+  renderIsoBox();
+  renderTargetBox();
+  fitIsoView();
+  syncURL(!wasOn);
+}
+
+// Gdy obszar zasięgu wychodzi poza widok — oddal/przesuń mapę (nigdy nie przybliżaj).
+function fitIsoView() {
+  if (!iso) return;
+  const pts = [[iso.o.lat, iso.o.lon]];
+  iso.labels.forEach((l, id) => { if (l.t <= iso.T) { const s = STOP_BY_ID.get(id); pts.push([s.lat, s.lon]); } });
+  const b = L.latLngBounds(pts);
+  if (!b.isValid() || map.getBounds().contains(b)) return;
+  map.fitBounds(b, { padding: [24, 24], maxZoom: map.getZoom() });
+}
+let isoToken = 0;
+
+function drawIso() {
+  if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
+  if (!iso) return;
+  if (iso.walk) { drawIsoWalk(); return; }
+  const circles = [];
+  // od najdalszego pasma do najbliższego: bliższe malowane na wierzchu
+  [...iso.bands].reverse().forEach(b => {
+    if (iso.o.point) {
+      circles.push(L.circle([iso.o.lat, iso.o.lon], {
+        renderer: isoRenderer, radius: Math.min(b.hi * WALK_MPM, iso.o.walkMax), stroke: false,
+        fillColor: b.color, fillOpacity: 1, interactive: false,
+      }));
+    }
+    iso.labels.forEach((lab, id) => {
+      if (lab.t >= b.hi) return;   // pasma kończą się na iso.T
+      const r = Math.min((b.hi - lab.t) * WALK_MPM, WALK_MAX);
+      if (r < 25) return;
+      const st = STOP_BY_ID.get(id);
+      circles.push(L.circle([st.lat, st.lon], {
+        renderer: isoRenderer, radius: r, stroke: false, fillColor: b.color, fillOpacity: 1, interactive: false,
+      }));
+    });
+  });
+  isoLayer = L.layerGroup(circles).addTo(map);
+}
+
+function clearIso() {
+  const was = !!iso;
+  iso = null;
+  if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
+  if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
+  if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+  if (was) { restyleStops(); renderTargetBox(); }
+}
+
+// najlepszy (najszybszy) słupek o tej nazwie — czas dotarcia do przystanku
+function bestLabel(ids) {
+  let best = null, bid = null;
+  ids.forEach(id => { const l = iso && iso.labels.get(id); if (l && l.t <= iso.T && (!best || l.t < best.t)) { best = l; bid = id; } });
+  return best ? { id: bid, lab: best } : null;
+}
+
+function isoLegs(id) {
+  if (iso.walk) return walkLegs(id);
+  const legsA = isoLegsApprox(id);
+  if (iso.o.point) {
+    let first = id;
+    for (let cur = id, g = 0; cur && g++ < 50; ) { const l = iso.labels.get(cur); if (!l || l.origin) { first = cur; break; } cur = l.prev; }
+    const st = STOP_BY_ID.get(first), lab = iso.labels.get(first);
+    if (st && lab) legsA.unshift({ walk: true, pts: [[iso.o.lat, iso.o.lon], [st.lat, st.lon]], min: lab.t });
+  }
+  return legsA;
+}
+function isoLegsApprox(id) {
+  const legs = [];
+  let cur = id, guard = 0;
+  while (cur && guard++ < 50) {
+    const l = iso.labels.get(cur);
+    if (!l || l.origin) break;
+    legs.unshift({ ...l, at: cur });   // at = przystanek końca etapu (to = indeks w kursie)
+    cur = l.prev;
+  }
+  return legs;
+}
+
+// Etapy trasy, każdy w osobnym wierszu: "pieszo 3 min", "152 Rondo Mogilskie → Dąbie · 4 przyst., 7 min"
+function legsText(legs, C = iso) {
+  const parts = [];
+  const nm = id => esc(STOP_BY_ID.get(id)?.name || '');
+  legs.forEach(l => {
+    if (l.walk) {
+      if (l.min != null && l.min < 0.5) return;               // np. przejście między słupkami tego samego węzła
+      parts.push(l.min != null ? `pieszo ${Math.max(1, Math.round(l.min))} min` : 'pieszo');
+    } else if (l.ride) {
+      const { key } = csaRideInfo(l, C);
+      const n = Math.max(1, l.pts.length - 1), ride = Math.round(l.arr - l.dep);
+      parts.push(`<b class="leg-line">${esc(key.split('|')[0])}</b> ${fmt(l.dep)} ${esc(STOPS[l.from].name)} → ${esc(STOPS[l.to].name)}`
+        + ` <span class="leg-note">· ${n} przyst., ${ride} min${l.wait >= 1 ? `, czekasz ${Math.round(l.wait)} min` : ''}</span>`);
+    } else {
+      const tr = isoGraph.trips[l.ti], a = tr.s[l.from], z = tr.s[l.to];
+      const ride = Math.round(z[1] - a[1]), wait = Math.round(tr.wait);
+      parts.push(`<b class="leg-line">${esc(tr.key.split('|')[0])}</b> ${nm(a[0])} → ${nm(z[0])}`
+        + ` <span class="leg-note">· ${l.to - l.from} przyst., ${ride} min${wait >= 1 ? ` + śr. ${wait} min czekania` : ''}</span>`);
+    }
+  });
+  return (parts.length ? parts : ['pieszo']).map(p => `<div class="leg">${p}</div>`).join('');
+}
+
+function isoCardLine(s, sibs) {
+  if (!iso) return '';
+  const b = bestLabel([s.id, ...sibs.map(x => x.id)]);
+  if (!b) return `<div class="sh-iso">Poza zasięgiem ${iso.T} min</div>`;
+  if (b.lab.origin) {
+    return iso.o.point ? `<div class="sh-iso"><b>${Math.max(1, Math.round(b.lab.t))} min</b> pieszo</div>`
+                       : `<div class="sh-iso"><b>Start</b></div>`;
+  }
+  drawIsoPath(b.id);
+  const legs = isoLegs(b.id), rides = legs.filter(l => !l.walk).length;
+  return `<div class="sh-iso"><b>${Math.round(b.lab.t)} min</b> stąd${iso.csa ? ` · na miejscu ${fmt(Math.round(iso.csa.t0 + b.lab.t))}` : ''}`
+    + (rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : '')
+    + `<div class="sh-legs">${legsText(legs)}</div></div>`;
+}
+
+// po najechaniu na osiągnięty przystanek: narysuj, jak tam dojechać
+function drawIsoPath(id) { drawLegs(isoLegs(id)); }
+
+const walkStyle = [
+  { color: '#fff', weight: 7, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false },
+  { color: '#1c1c1a', weight: 3.5, dashArray: '0.1 7', lineCap: 'round', interactive: false },
+];
+function drawLegs(legs, tail, C = iso) {
+  if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+  const parts = legLayers(legs, tail, C);
+  if (parts.length) isoPathLayer = L.layerGroup(parts).addTo(map);
+}
+// warstwy trasy: przejazdy w kolorach linii, na wierzchu kropkowane przejścia piesze
+function legLayers(legs, tail, C = iso) {
+  const parts = [];
+  if (tail) legs = legs.concat([{ walk: true, pts: tail }]);
+  const walks = [];
+  legs.forEach(l => {
+    if (l.walk && l.pts) { walks.push(l.pts); return; }
+    if (l.ride) {
+      const { key } = csaRideInfo(l, C), c = routeColor(ROUTES[key] || { type: key.split('|')[1] });
+      parts.push(L.polyline(l.pts, { color: '#fff', weight: 9, opacity: 0.9, lineJoin: 'round', interactive: false }));
+      parts.push(L.polyline(l.pts, { color: c, weight: 5, lineJoin: 'round', interactive: false }));
+      l.pts.forEach(p => parts.push(L.circleMarker(p, { radius: 3, weight: 2, color: c, fillColor: '#fff', fillOpacity: 1, interactive: false })));
+      return;
+    }
+    const a = STOP_BY_ID.get(l.prev), z = STOP_BY_ID.get(l.at);
+    if (l.walk) {
+      if (a && z) walks.push([[a.lat, a.lon], [z.lat, z.lon]]);
+      return;
+    }
+    const tr = isoGraph.trips[l.ti];
+    const pts = tr.s.slice(l.from, l.to + 1).map(([sid]) => { const x = STOP_BY_ID.get(sid); return [x.lat, x.lon]; });
+    const c = routeColor(ROUTES[tr.key]);
+    parts.push(L.polyline(pts, { color: '#fff', weight: 9, opacity: 0.9, lineJoin: 'round', interactive: false }));
+    parts.push(L.polyline(pts, { color: c, weight: 5, lineJoin: 'round', interactive: false }));
+    pts.forEach(p => parts.push(L.circleMarker(p, { radius: 3, weight: 2, color: c, fillColor: '#fff', fillOpacity: 1, interactive: false })));
+  });
+  walks.forEach(pts => walkStyle.forEach(st => parts.push(L.polyline(pts, st))));
+  return parts;
+}
+
+function renderIsoBox() {
+  const box = document.getElementById('iso-box');
+  if (!box) return;
+  const o = iso ? iso.o : isoOrigin();
+  if (!o) { box.innerHTML = ''; return; }
+  const hasHw = Object.values(ROUTES).some(r => (r.trips || []).some(t => t && t.hw));
+  if (!hasHw) { box.innerHTML = ''; return; }
+  if (!iso) {
+    box.innerHTML = `<button type="button" class="iso-start" data-iso="on">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>
+      Gdzie dojadę w ${isoT} min${o.point ? ' stąd' : ''}?</button>`;
+    return;
+  }
+  if (!o.poles.length && !(iso.walk && o.point)) {
+    box.innerHTML = `<div class="iso-card"><div class="iso-top"><h3>Zasięg</h3><button type="button" class="link-btn" data-iso="off">Wyłącz</button></div>
+      <div class="muted" style="margin-top:6px">W odległości ${o.walkMax / 1000} km od tego miejsca nie ma żadnego przystanku.</div></div>`;
+    return;
+  }
+  // statystyki: przystanki (po nazwie) w każdym paśmie
+  const bestByName = new Map();
+  iso.labels.forEach((l, id) => {
+    if (l.t > iso.T) return;
+    const st = STOP_BY_ID.get(id);
+    const cur = bestByName.get(st.name);
+    if (!cur || l.t < cur.t) bestByName.set(st.name, { t: l.t, id, st });
+  });
+  const reached = [...bestByName.values()].filter(x => !(iso.labels.get(x.id).origin && !o.point));
+  const counts = iso.bands.map(b => reached.filter(x => x.t >= b.lo && x.t < b.hi).length);
+  counts[counts.length - 1] += reached.filter(x => x.t === iso.T).length;
+  const far = reached
+    .map(x => ({ ...x, d: haversineMeters(o.lat, o.lon, x.st.lat, x.st.lon) }))
+    .sort((a, b) => b.d - a.d).slice(0, 5);
+  const km = d => (d / 1000).toLocaleString('pl', { maximumFractionDigits: 1 }) + ' km';
+  // czy w ogóle coś jedzie (inaczej "dojdziesz pieszo")
+  const anyRide = iso.mode === 'time' ? iso.rides > 0
+    : iso.walk ? reached.some(x => iso.res.kind[WALK.N + STOP_INDEX().get(x.id)] === 3)
+    : reached.some(x => iso.labels.get(x.id).ti != null);
+
+  // przełącznik trybu + parametry
+  const tm = iso.mode === 'time';
+  const modeHtml = timeModeAvailable() && WALK ? `<div class="seg" role="group" aria-label="Tryb">
+      <button type="button" class="${tm ? '' : 'on'}" data-iso-mode="typical">Typowy dzień</button>
+      <button type="button" class="${tm ? 'on' : ''}" data-iso-mode="time">Wyjazd o godzinie</button></div>` : '';
+  let paramsHtml;
+  if (tm) {
+    const days = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(localISO(d)); }
+    const hh = String(Math.floor(isoTime / 60) % 24).padStart(2, '0'), mm = String(isoTime % 60).padStart(2, '0');
+    paramsHtml = '<div class="chips">' + days.map((d, i) => {
+      const dd = new Date(d + 'T12:00');
+      const label = i === 0 ? 'Dziś' : i === 1 ? 'Jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
+      return `<button type="button" class="chip${d === isoDate ? ' on' : ''}" data-iso-date="${d}">${label}</button>`;
+    }).join('') + '</div>'
+      + `<div class="iso-when"><label for="iso-time">Wyjście o</label><input type="time" id="iso-time" value="${hh}:${mm}" step="60">`
+      + `<button type="button" class="link-btn" data-iso-now="1">teraz</button></div>`;
+  } else {
+    paramsHtml = '<div class="chips">' + Object.entries(DAY_NAMES).map(([k, v]) =>
+      `<button type="button" class="chip${k === isoDay ? ' on' : ''}" data-iso-day="${k}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('') + '</div>';
+  }
+  const note = tm
+    ? `Prawdziwe odjazdy z rozkładu${iso.csa && iso.csa.approx ? ` (brak danych na ten dzień — rozkład z ${iso.csa.approx})` : ''}, ${TRANSFER_MIN} min zapasu na przesiadkę, dojście i przesiadki pieszo po ulicach z OpenStreetMap, 4,5 km/h. Bez korków i opóźnień.`
+    : `Typowy dzień (${DAY_NAMES[isoDay]}), 6:00–20:00. Wliczam średnie czekanie na przystanku (połowa odstępu kursów)${WALK ? ', dojście i przesiadki pieszo po ulicach i ścieżkach z OpenStreetMap, 4,5 km/h' : ` i przesiadki pieszo do ${WALK_MAX} m, w przybliżeniu (linia prosta × 1,3)`}.`;
+
+  box.innerHTML = `<div class="iso-card">
+    <div class="iso-top"><h3>Zasięg: ${esc(o.name)}</h3><button type="button" class="link-btn" data-iso="off">Wyłącz</button></div>
+    ${modeHtml}${paramsHtml}
+    <div class="iso-row"><label for="iso-t">Czas</label><input type="range" id="iso-t" min="10" max="60" step="5" value="${iso.T}"><b>${iso.T} min</b></div>
+    <div class="iso-sum">${anyRide ? 'Dojedziesz' : 'Dojdziesz pieszo'} do <b>${reached.length}</b> ${reached.length === 1 ? 'przystanku' : 'przystanków'}, najdalej ${far.length ? km(far[0].d) : '—'} w linii prostej.</div>
+    ${tm && iso.rides === 0 ? '<div class="iso-next" id="iso-next">Sprawdzam najbliższy odjazd…</div>' : ''}
+    <div class="iso-legend">${iso.bands.map((b, i) =>
+      `<i style="background:${b.color}"></i><span>${b.lo}–${b.hi} min</span><span>${counts[i]} przyst.</span>`).join('')}</div>
+    <div class="iso-next" style="margin:10px 0 0"><b>Kliknij cel na mapie</b> — pokażę, jak tam dojechać${COARSE ? '' : ' (albo tylko najedź kursorem)'}. Żeby zmienić start, przeciągnij pinezkę.</div>
+    <div class="muted" style="margin-top:10px">${note}</div>
+  </div>`;
+  const inp = document.getElementById('iso-t');
+  let raf = 0;
+  inp.addEventListener('input', () => {
+    isoT = +inp.value;
+    inp.nextElementSibling.textContent = isoT + ' min';
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => setIsoT(isoT));
+  });
+  // po puszczeniu suwaka: przelicz od razu (bez czekania na klatkę) i odśwież statystyki
+  inp.addEventListener('change', () => {
+    cancelAnimationFrame(raf);
+    isoT = +inp.value;
+    setIsoT(isoT);
+    renderIsoBox();
+    fitIsoView();
+    syncURL(false);
+    document.getElementById('iso-t')?.focus();
+  });
+  const ti = document.getElementById('iso-time');
+  if (ti) ti.addEventListener('change', () => {
+    const [h, m] = ti.value.split(':').map(Number);
+    if (Number.isFinite(h) && Number.isFinite(m)) { isoTime = h * 60 + m; computeIso(); }
+  });
+  if (tm && iso.rides === 0) fillNextDeparture(o);
+}
+
+// gdy w limicie czasu nic nie odjeżdża: najbliższy odjazd z przystanków startowych (z deps/)
+async function fillNextDeparture(o) {
+  const el0 = document.getElementById('iso-next');
+  if (!el0 || !iso || !iso.csa) return;
+  const SI = STOP_INDEX(), prof = profileFor(isoDate);
+  const starts = o.point
+    ? o.poles.filter(p => p.tw != null && p.tw <= 20).map(p => ({ st: STOP_BY_ID.get(p.id), tw: p.tw }))
+    : o.poles.map(p => ({ st: STOP_BY_ID.get(p.id), tw: 0 }));
+  if (!starts.length || !prof) { el0.textContent = 'Z tego miejsca nie da się dojść pieszo do żadnego przystanku.'; return; }
+  const cells = await Promise.all([...new Set(starts.map(x => cellOf(x.st)))].map(loadCell));
+  let best = null;
+  starts.forEach(({ st, tw }) => cells.forEach(cell => Object.entries(cell[st.id] || {}).forEach(([key, arr]) => arr.forEach(e => {
+    (e.t[e.p[prof.p]] || []).forEach(m => {
+      if (m >= isoTime + tw && (!best || m < best.m)) best = { m, key, h: e.h, name: st.name, tw };
+    });
+  }))));
+  const el = document.getElementById('iso-next');
+  if (!el) return;
+  if (!best) {
+    // kolejne dni (do tygodnia): pierwszy odjazd danego dnia
+    for (let i = 1; i <= 7 && !best; i++) {
+      const d = new Date(isoDate + 'T12:00'); d.setDate(d.getDate() + i);
+      const date = localISO(d), pr = profileFor(date);
+      if (!pr) continue;
+      starts.forEach(({ st, tw }) => cells.forEach(cell => Object.entries(cell[st.id] || {}).forEach(([key, arr]) => arr.forEach(e => {
+        (e.t[e.p[pr.p]] || []).forEach(m => {
+          if (m >= tw && (!best || m < best.m)) best = { m, key, h: e.h, name: st.name, tw, date };
+        });
+      }))));
+    }
+    if (!best) { el.innerHTML = '<b>Stąd w najbliższym tygodniu nic nie odjeżdża.</b>'; return; }
+    const tomorrow = (() => { const d = new Date(isoDate + 'T12:00'); d.setDate(d.getDate() + 1); return localISO(d); })();
+    const dd = new Date(best.date + 'T12:00');
+    const dayLabel = best.date === tomorrow ? 'jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
+    const at = Math.max(0, Math.round(best.m - best.tw - 2));
+    el.innerHTML = `<b>Tego dnia stąd już nic nie odjeżdża.</b> Najbliższy odjazd: ${dayLabel}, <b>${esc(best.key.split('|')[0])} o ${fmt(best.m)}</b>`
+      + ` z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-goto="${best.date},${at}">Pokaż ${dayLabel} od ${fmt(at)}</button>`;
+    return;
+  }
+  const wait = best.m - isoTime;
+  el.innerHTML = `W ciągu ${iso.T} min nic stąd nie odjeżdża. <b>Najbliższy odjazd: ${esc(best.key.split('|')[0])} o ${fmt(best.m)}</b>`
+    + ` (${zaMin(wait)}) z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-at="${Math.max(0, Math.round(best.m - best.tw - 2))}">Wyjdź o ${fmt(Math.max(0, Math.round(best.m - best.tw - 2)))}</button>`;
+}
+
+let stopHoverOn = false, pointHoverLayer = null, pointRaf = 0;
+
+// najszybciej osiągalny węzeł w promieniu R: czas dojścia do węzła + dojście od niego do punktu
+function bestReachableNode(lat, lon, R, t = iso.res.time) {
+  const W = WALK, cy = Math.floor(lat / W.GC), cx = Math.floor(lon / W.GC);
+  let best = null;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const list = W.grid.get((cy + dy) + ',' + (cx + dx));
+    if (!list) continue;
+    for (const i of list) {
+      if (!isFinite(t[i])) continue;
+      const d = haversineMeters(lat, lon, W.nodes[2 * i] / 1e6, W.nodes[2 * i + 1] / 1e6);
+      if (d > R) continue;
+      const tt = t[i] + d / WALK_SPEED;
+      if (!best || tt < best.t) best = { node: i, d, t: tt };
+    }
+  }
+  return best;
+}
+// Trasa z miejsca startu kontekstu C do dowolnego punktu: czas, etapy (z dojściem do samego punktu), linie
+function routeTo(C, lat, lon, R = 200) {
+  if (!C || !C.walk || !C.res) return null;
+  const nn = bestReachableNode(lat, lon, R, C.res.time);
+  if (!nn) return { t: Infinity };
+  const legs = walkLegsFrom(nn.node, C);
+  if (nn.d > 3) {   // ostatnie metry do punktu doliczamy do ostatniego przejścia
+    const end = [lat, lon], last = legs[legs.length - 1];
+    if (last && last.walk && last.pts) { last.pts = last.pts.concat([end]); last.min += nn.d / WALK_SPEED; }
+    else legs.push({ walk: true, pts: [[WALK.nodes[2 * nn.node] / 1e6, WALK.nodes[2 * nn.node + 1] / 1e6], end], min: nn.d / WALK_SPEED });
+  }
+  const lines = [];
+  legs.forEach(l => {
+    if (l.walk) return;
+    const key = l.ride ? csaRideInfo(l, C).key : isoGraph.trips[l.ti].key;
+    const [ref, type] = key.split('|');
+    lines.push({ ref, type });
+  });
+  const walkMin = legs.filter(l => l.walk).reduce((a, l) => a + (l.min || 0), 0);
+  return { t: nn.t, legs, lines, rides: lines.length, walkMin };
+}
+function pointHover(ll) {
+  if (!iso || !iso.walk || stopHoverOn) return hidePointHover();
+  const r = routeTo(iso, ll.lat, ll.lng, 150);
+  if (!r || !(r.t <= iso.T)) return hidePointHover();
+  const t = r.t, legs = r.legs;
+  drawLegs(legs);
+  const rides = r.rides;
+  const cp = map.latLngToContainerPoint(ll), mw = map.getSize().x;
+  const below = cp.y < 150, side = cp.x < 150 ? ' al' : cp.x > mw - 150 ? ' ar' : '';
+  const html = `<div class="sh${below ? ' below' : ''}${side}" style="--sh-c:#184f95"><div class="sh-dot" style="width:10px;height:10px"></div>
+    <div class="sh-tip sh-tip-pt wide"><div class="sh-iso" style="margin:0;padding:0;border:0"><b>${Math.max(1, Math.round(t))} min</b> stąd${iso.csa ? ` · na miejscu ${fmt(Math.round(iso.csa.t0 + t))}` : ''}${rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : ''}</div>
+    <div class="sh-legs">${legsText(legs)}</div></div></div>`;
+  const icon = L.divIcon({ className: '', iconSize: [0, 0], html });
+  if (pointHoverLayer) pointHoverLayer.setLatLng(ll).setIcon(icon);
+  else pointHoverLayer = L.marker(ll, { icon, interactive: false, pane: 'hover', keyboard: false }).addTo(map);
+}
+function hidePointHover() {
+  if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
+  if (!stopHoverOn && isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+}
+
+function hideStopHover() {
+  stopHoverOn = false;
+  if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+  if (hoverLayer) { map.removeLayer(hoverLayer); hoverLayer = null; }
+}
+
+function clearPick() {
+  if (clickMarker) { map.removeLayer(clickMarker); clickMarker = null; }
+  if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
+  if (poleLayer) { map.removeLayer(poleLayer); poleLayer = null; }
+  poleEls = new Map();
+}
+
+// Numery słupków (01, 02…) z tablic ZTP przy wybranym przystanku — te same co na tablicy odjazdów.
+// Słupki tramwajowy i autobusowy o tym samym numerze to jedno miejsce, więc jedna etykieta.
+let poleLayer = null, poleEls = new Map();
+function drawPoleLabels(poles) {
+  const byCode = new Map();
+  poles.forEach(p => { if (p.c && !byCode.has(p.c)) byCode.set(p.c, p); });
+  if (byCode.size < 2) return;
+  const marks = [...byCode.entries()].map(([c, p]) => {
+    const m = L.marker([p.lat, p.lon], { interactive: false, keyboard: false, pane: 'hover',
+      icon: L.divIcon({ className: '', iconSize: [0, 0], html: `<span class="pole-label" data-c="${esc(c)}">${esc(c)}</span>` }) });
+    m.on('add', () => poleEls.set(c, m.getElement()?.querySelector('.pole-label')));
+    return m;
+  });
+  poleLayer = L.layerGroup(marks).addTo(map);
+}
+function hotPole(c) {
+  poleEls.forEach((el, k) => el && el.classList.toggle('hot', !!c && k === c));
+}
+
+// Pinezka startu da się przeciągnąć: puszczenie = nowe miejsce (włączony zasięg się przelicza)
+function addOriginMarker(latlng) {
+  clickMarker = L.marker(latlng, { icon: clickIcon, draggable: true, keyboard: false, title: 'Przeciągnij, żeby zmienić miejsce', bubblingMouseEvents: false }).addTo(map);
+  clickMarker.on('dragstart', () => { hideStopHover(); hidePointHover(); });
+  clickMarker.on('drag', e => { if (radiusCircle) radiusCircle.setLatLng(e.target.getLatLng()); });
+  clickMarker.on('dragend', e => { if (selectedRouteKey) selectRoute(selectedRouteKey); selectPoint(e.target.getLatLng()); });
+}
+
+function selectPoint(latlng) {
+  const keepIso = !!iso;
+  clearIso();
+  showNotice('');
+  stopMode = null;
+  document.getElementById('panel').classList.remove('stop-mode');
+  clearPick();
+  addOriginMarker(latlng);
+  radiusCircle = L.circle(latlng, {
+    radius: radiusMeters, color: '#c98a2c', weight: 1.5, fillColor: '#f0b862', fillOpacity: 0.12,
+    interactive: false
+  }).addTo(map);
+  recompute(latlng);
+  document.getElementById('panel').scrollTop = 0;
+  syncURL(true);
+  if (keepIso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego miejsca
+}
+
+// ids = słupki w zasięgu (pomarańczowe); unreach = w okręgu, ale bez dojścia pieszo (szare, przerywane)
+let hlIds = new Set(), hlUnreach = new Set();
+function highlightStops(ids, unreach = new Set()) {
+  hlIds = ids; hlUnreach = unreach;
+  routeStopMarkers.forEach(({ m, s }) => m.setStyle({ fillColor: ids.has(s.id) && !unreach.has(s.id) ? '#f0b862' : '#fff' }));
+  const k = Math.max(stopScale(), 0.75);
+  const bases = { tram: baseStopStyle({ _kind: 'tram' }), bus: baseStopStyle({ _kind: 'bus' }) };
+  const un = { color: '#6f6a5e', fillColor: '#ffffff', radius: 6 * k, weight: 2.5, dashArray: '3 2', fillOpacity: 1, opacity: 1 };
+  const on = { color: '#c98a2c', fillColor: '#f0b862', radius: 6 * k, weight: 2, dashArray: null, fillOpacity: 1, opacity: 1 };
+  stopMarkers.forEach((m, i) => {
+    const s = STOPS[i], id = s.id;
+    m.setStyle(unreach.has(id) ? un : ids.has(id) ? on : bases[stopKind(s)]);
+  });
+}
+
+// Klik w przystanek: bierzemy wszystkie słupki o tej nazwie w promieniu 400 m
+function selectStop(s) {
+  const poles = STOPS
+    .filter(x => x.name === s.name)
+    .map(x => ({ ...x, dist: haversineMeters(s.lat, s.lon, x.lat, x.lon) }))
+    .filter(x => x.dist <= 400)
+    .sort((a, b) => a.dist - b.dist);
+  stopMode = { id: s.id, name: s.name, lat: s.lat, lon: s.lon, poles };
+  boardLimit = 8;
+  showNotice('');
+  pointReach = null;
+  document.getElementById('panel').classList.add('stop-mode');
+  clearPick();
+  addOriginMarker(L.latLng(s.lat, s.lon));
+  drawPoleLabels(poles);
+  lastNearby = poles;
+  highlightStops(new Set(poles.map(x => x.id)));
+  if (selectedRouteKey && !poles.some(x => servesLine(x, selectedRouteKey))) {
+    selectRoute(selectedRouteKey);   // ponowny wybór = odznaczenie linii, której tu nie ma
+  }
+  renderStopPanel();
+  document.getElementById('panel').scrollTop = 0;
+  syncURL(true);
+  if (iso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego przystanku
+}
+
+// Linia nocna = żaden wariant nie ma odstępu kursów w godz. 6–20 (w danych ZTP to dokładnie 6xx, 9xx, 62, 69)
+const nightCache = new Map();
+function isNight(key) {
+  if (!nightCache.has(key)) {
+    const r = ROUTES[key];
+    nightCache.set(key, !!(r && r.trips && r.trips.length && !r.trips.some(t => t && (t.hw || t.hwS || t.hwN))));
+  }
+  return nightCache.get(key);
+}
+// stats (z lineStats): częstotliwość przy numerze linii; bez stats — same numery
+function hwText(key, stats) {
+  const st = stats && stats.per.get(key);
+  if (!stats) return '';
+  if (!st || !st.all) return 'nie kursuje';
+  if (!st.maxPole) return 'rzadko';
+  const h = 840 / st.maxPole;
+  return h <= 90 ? `co ${Math.max(1, Math.round(h))} min` : `${st.maxPole}× w 6–20`;
+}
+function badgesHtml(stops, reach = null, stats = null) {
+  const lines = new Map(), okLines = new Set();
+  stops.forEach(s => s.lines.forEach(l => {
+    const key = `${l.ref}|${l.type}`;
+    lines.set(key, l);
+    if (!reach || reach.get(s.id) !== null) okLines.add(key);
+  }));
+  const dayWord = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' }[isoDay];
+  const badge = key => {
+    const l = lines.get(key), off = !okLines.has(key), night = isNight(key);
+    const hw = night ? '' : hwText(key, stats);
+    const title = off ? `Linia ${l.ref} zatrzymuje się w okręgu tylko na przystankach, do których nie da się dojść pieszo z tego miejsca`
+      : night ? `Linia nocna ${l.ref}` : hw && hw !== 'nie kursuje' && hw !== 'rzadko' ? `Linia ${l.ref}: ${hw} ${dayWord}, w godz. 6–20`
+      : hw === 'nie kursuje' ? `Linia ${l.ref} ${dayWord} tu nie kursuje` : `Linia ${l.ref}`;
+    return `<span class="badge ${l.type}${off ? ' unreach' : ''}${night ? ' night' : ''}${hw === 'nie kursuje' ? ' off' : ''}" role="button" tabindex="0" data-key="${esc(key)}" title="${esc(title)}">`
+      + `${esc(l.ref)}${hw ? `<span class="hw">${hw}</span>` : ''}</span>`;
+  };
+  const sortRef = (a, b) => (a.split('|')[1] !== b.split('|')[1] ? (a.endsWith('|tram') ? -1 : 1) : a.localeCompare(b, 'pl', { numeric: true }));
+  const keys = [...lines.keys()].sort(sortRef);
+  const day = keys.filter(k => !isNight(k)), night = keys.filter(isNight);
+  const group = (label, ks) => ks.length
+    ? `<div class="group-label">${label}</div><div class="badges">${ks.map(badge).join('')}</div>` : '';
+  const html = group('Tramwaje', day.filter(k => k.endsWith('|tram'))) + group('Autobusy', day.filter(k => !k.endsWith('|tram')))
+    + group('Nocne', night)
+    + (stats && day.length ? `<div class="muted hw-note">Przy numerze: średnio co ile minut odjeżdża ${dayWord}, w godz. 6–20.</div>` : '');
+  return { html, count: day.length, night: night.length };
+}
+
+// Widok przystanku: najpierw odjazdy (po to się klika przystanek), potem linie i dojazdy do celów
+function renderStopPanel() {
+  clearPreview();
+  const { name, poles } = stopMode;
+  const b = badgesHtml(poles);
+  document.getElementById('panel-title').textContent = name;
+  document.getElementById('panel-sub').textContent = `${b.count} ${linii(b.count)}`
+    + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'nocna', 'nocne', 'nocnych')}` : '');
+  let html = '<div id="target-box"></div>';
+  html += `<button type="button" class="link-btn" data-around="1">Pokaż linie w promieniu ${radiusMeters} m od tego przystanku</button>`;
+  html += '<div id="iso-box"></div>';
+  html += '<div class="ld-sec"><h3>Najbliższe odjazdy</h3><div id="board"><div class="muted">Wczytuję…</div></div></div>';
+  html += `<div id="lines-box">${b.html}</div>`;
+  html += '<div id="line-detail"></div>';
+  html += '<div id="place-card" style="margin-top:16px"></div>';
+  document.getElementById('results').innerHTML = html;
+  renderIsoBox();
+  updateBadgeSelection();
+  renderLineDetail();
+  renderBoard();
+  announce();
+  refreshPlace();
+}
+
+let boardToken = 0;
+async function renderBoard() {
+  const el = document.getElementById('board');
+  if (!el || !stopMode) return;
+  if (!META || !META.calendar) {
+    el.innerHTML = '<div class="muted">Odjazdy są dostępne tylko dla pełnych danych (stops_data.json + katalog deps/).</div>';
+    return;
+  }
+  const token = ++boardToken;
+  const poles = stopMode.poles;
+  const data = await Promise.all([...new Set(poles.map(cellOf))].map(loadCell));
+  if (token !== boardToken || !document.getElementById('board')) return;
+  const prof = profileFor(todayISO());
+  if (!prof) { el.innerHTML = '<div class="muted">Brak rozkładu na dziś.</div>'; return; }
+  const now = new Date(); const nowMin = now.getHours() * 60 + now.getMinutes();
+  const seen = new Set(), items = [];
+  poles.forEach(s => data.forEach(cell => Object.entries(cell[s.id] || {}).forEach(([key, arr]) =>
+    arr.forEach(e => (e.t[e.p[prof.p]] || []).forEach(m => {
+      const id = `${key}/${e.h}/${m}`;
+      if (m >= nowMin && m < nowMin + 180 && !seen.has(id)) { seen.add(id); items.push({ m, key, h: e.h, c: s.c || '' }); }
+    })))));
+  items.sort((a, b) => a.m - b.m || a.key.localeCompare(b.key, 'pl', { numeric: true }));
+  // rzadko obsługiwany przystanek: wypisz wszystkie dzisiejsze odjazdy (np. "w sobotę tylko 2")
+  const allDay = [], seenAll = new Set();
+  poles.forEach(s => data.forEach(cell => Object.entries(cell[s.id] || {}).forEach(([key, arr]) =>
+    arr.forEach(e => (e.t[e.p[prof.p]] || []).forEach(m => {
+      const id = `${key}/${e.h}/${m}`;
+      if (!seenAll.has(id)) { seenAll.add(id); allDay.push({ m, key, h: e.h }); }
+    })))));
+  allDay.sort((a, b) => a.m - b.m);
+  const RARE = 8;
+  const rareHtml = allDay.length && allDay.length <= RARE
+    ? `<div class="iso-next" style="margin-bottom:8px"><b>Dziś tylko ${allDay.length} ${allDay.length === 1 ? 'odjazd' : allDay.length < 5 ? 'odjazdy' : 'odjazdów'} stąd:</b> `
+      + allDay.map(x => `${fmt(x.m)} (${esc(x.key.split('|')[0])} → ${esc(x.h)})`).join(', ') + '</div>'
+    : '';
+  const board = document.getElementById('board');
+  if (!items.length) {
+    board.innerHTML = rareHtml + (allDay.length ? '<div class="muted">W ciągu najbliższych 3 godzin nic stąd nie odjeżdża.</div>'
+      : '<div class="muted">Dziś z tego przystanku nic nie odjeżdża.</div>');
+    return;
+  }
+  const shown = items.slice(0, boardLimit), rest = items.length - shown.length;
+  const codes = new Set(poles.map(p => p.c).filter(Boolean));
+  const plTitle = 'Numer przystanku z tablicy ZTP — taki sam jak etykieta przy przystanku na mapie';
+  board.innerHTML = rareHtml + (prof.approx ? `<div class="muted" style="margin-bottom:6px">Brak danych na dziś — rozkład z ${dmy(prof.approx)}.</div>` : '') +
+    '<div class="board">' + shown.map(it => {
+      const [ref, type] = it.key.split('|');
+      const d = it.m - nowMin;
+      return `<div class="dep-row${d <= 5 ? ' soon' : ''}" role="button" tabindex="0" data-line="${esc(it.key)}" data-pole="${esc(it.c)}">
+        <span class="t">${fmt(it.m)}</span><span class="badge ${type}">${esc(ref)}</span>
+        ${codes.size > 1 && it.c ? `<span class="pl" title="${plTitle}">${esc(it.c)}</span>` : '<span></span>'}
+        <span class="h">→ ${esc(it.h)}</span><span class="in">${d === 0 ? 'teraz' : inMin(d)}</span></div>`;
+    }).join('') + '</div>'
+    + (rest > 0 ? `<button type="button" class="link-btn more-btn" data-board-more="1">Pokaż więcej (jeszcze ${nDeps(rest)} w ciągu 3 h)</button>`
+                : items.length > 16 ? '<div class="muted" style="margin-top:8px;text-align:center">To wszystkie odjazdy w ciągu 3 h.</div>' : '');
+}
+let boardLimit = 16;
+setInterval(() => { if (stopMode) renderBoard(); }, 60000);
+
+// ---------------------------------------------------------------------------
+// Stan w adresie strony (#s=przystanek, #p=punkt&r=promień, l=linia, iso=minuty…):
+// link da się udostępnić, a "Wstecz" w przeglądarce wraca do poprzedniego widoku.
+// ---------------------------------------------------------------------------
+let applyingState = false, syncTimer = 0, syncPush = false;
+function stateHash() {
+  const p = new URLSearchParams();
+  if (stopMode) p.set('s', stopMode.id);
+  else if (radiusCircle) {
+    const c = radiusCircle.getLatLng();
+    p.set('p', `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`);
+    p.set('r', radiusMeters);
+  }
+  if (iso) {
+    p.set('iso', iso.T);
+    if (iso.mode === 'time') { p.set('d', isoDate); p.set('t', fmt(isoTime)); } else p.set('dzien', isoDay);
+  } else if (selectedRouteKey) p.set('l', selectedRouteKey);
+  if (!iso && isoDay !== 'w' && (stopMode || radiusCircle)) p.set('dzien', isoDay);
+  if (target) p.set('cel', `${target.lat.toFixed(5)},${target.lon.toFixed(5)}`);
+  const s = p.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/%7C/g, '|');   // czytelniejszy adres
+  return s ? '#' + s : '';
+}
+// push = nowy wpis w historii (nowy widok), inaczej podmiana (zmiana parametru)
+function syncURL(push) {
+  if (applyingState) return;
+  syncPush = syncPush || push;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    const h = stateHash();
+    if (h !== location.hash) history[syncPush ? 'pushState' : 'replaceState'](null, '', h || location.pathname + location.search);
+    syncPush = false;
+  }, 0);
+}
+function showEmpty() {
+  clearIso();
+  clearPick();
+  stopMode = null;
+  lastNearby = [];
+  pointReach = null;
+  highlightStops(new Set());
+  document.getElementById('panel').classList.remove('stop-mode');
+  document.getElementById('panel-title').textContent = 'Wybierz miejsce na mapie';
+  document.getElementById('panel-sub').textContent = '';
+  document.getElementById('results').innerHTML = EMPTY_HTML;
+  showNotice('');
+  announce();
+}
+async function applyState() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  applyingState = true;
+  try {
+    clearIso();
+    hideStopHover();
+    if (selectedRouteKey) selectRoute(selectedRouteKey);
+    isoDay = DAY_NAMES[p.get('dzien')] ? p.get('dzien') : 'w';
+    // cel przed miejscem startu, żeby od razu policzyć do niego trasę
+    const cel = (p.get('cel') || '').split(',').map(Number);
+    if (cel.length === 2 && cel.every(Number.isFinite)) {
+      if (!target || Math.abs(target.lat - cel[0]) > 1e-5 || Math.abs(target.lon - cel[1]) > 1e-5) target = { lat: cel[0], lon: cel[1], label: null };
+    } else target = null;
+    // widok: miejsce ma być wyraźnie w środku mapy, nie przy krawędzi
+    const inView = ll => map.getBounds().pad(-0.2).contains(ll);
+    const s = p.get('s') && STOP_BY_ID.get(p.get('s'));
+    const pt = (p.get('p') || '').split(',').map(Number);
+    if (s) {
+      selectStop(s);
+      if (!inView([s.lat, s.lon])) map.setView([s.lat, s.lon], Math.max(map.getZoom(), 15));
+    } else if (pt.length === 2 && pt.every(Number.isFinite)) {
+      const r = +p.get('r');
+      if (r >= 200 && r <= 2000) { radiusMeters = Math.round(r / 100) * 100; radiusInput.value = radiusMeters; radiusVal.textContent = radiusMeters + ' m'; }
+      const ll = L.latLng(pt[0], pt[1]);
+      selectPoint(ll);
+      if (!inView(ll)) map.setView(ll, Math.max(map.getZoom(), 15));
+    } else {
+      showEmpty();
+    }
+    const l = p.get('l');
+    if (l && ROUTES[l] && (s || pt.length === 2)) selectRoute(l);
+    const T = +p.get('iso');
+    if (T && (stopMode || radiusCircle)) {
+      isoT = Math.min(60, Math.max(10, Math.round(T / 5) * 5));
+      const t = (p.get('t') || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (p.get('d') && /^\d{4}-\d{2}-\d{2}$/.test(p.get('d')) && t) {
+        isoMode = 'time'; isoDate = p.get('d'); isoTime = +t[1] * 60 + +t[2];
+      } else {
+        isoMode = 'typical';
+        if (DAY_NAMES[p.get('dzien')]) isoDay = p.get('dzien');
+      }
+      await computeIso();
+    }
+    renderTargetBox();
+  } finally {
+    applyingState = false;
+  }
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Czy do przystanku w okręgu da się dojść pieszo z zaznaczonego punktu (po ulicach z walk.bin).
+// Limit: 2,5 × promień drogi — dalej to już "naokoło przez pół gminy", traktujemy jak brak dojścia.
+let pointReach = null;   // Map stopId -> metry po ulicach | null (brak dojścia); null = nie liczono
+function computePointReach(latlng, nearby) {
+  if (!WALK) return null;
+  const nn = nearestNode(latlng.lat, latlng.lng);
+  if (!nn) return null;
+  const limit = (radiusMeters * 2.5 + nn.d) / WALK_SPEED;
+  const r = walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], limit, { walkOnly: true });
+  const SI = STOP_INDEX(), out = new Map();
+  nearby.forEach(st => {
+    const k = SI.get(st.id), sn = WALK.snapNode[k];
+    if (sn < 0) { out.set(st.id, st.dist * 1.3); return; }      // przystanek poza siecią: przybliżenie
+    const t = r.time[sn];
+    out.set(st.id, isFinite(t) ? t * WALK_SPEED + WALK.snapLen[k] : null);
+  });
+  return out;
+}
+
+function recompute(latlng) {
+  const nearby = STOPS
+    .map(s => ({...s, dist: haversineMeters(latlng.lat, latlng.lng, s.lat, s.lon)}))
+    .filter(s => s.dist <= radiusMeters)
+    .sort((a, b) => a.dist - b.dist);
+
+  lastNearby = nearby;
+  pointReach = computePointReach(latlng, nearby);
+  if (WALK === null && META && META.walk) {
+    // sieć piesza wczytuje się w tle; po wczytaniu przeliczamy ten sam punkt
+    loadWalk().then(() => { if (!stopMode && radiusCircle && radiusCircle.getLatLng().equals(latlng)) recompute(latlng); });
+  }
+  const unreach = new Set(pointReach ? nearby.filter(s => pointReach.get(s.id) === null).map(s => s.id) : []);
+  highlightStops(new Set(nearby.map(s => s.id)), unreach);
+
+  renderPanel(nearby);
+}
+
+function renderPanel(nearby) {
+  clearPreview();
+  const title = document.getElementById('panel-title');
+  const sub = document.getElementById('panel-sub');
+  const results = document.getElementById('results');
+
+  if (nearby.length === 0) {
+    // bez ślepego zaułka: najbliższe przystanki poza okręgiem + dojazdy do celów i tak działają
+    const c = radiusCircle.getLatLng();
+    const near = nearestOutside(c);
+    title.textContent = `Brak przystanków w promieniu ${radiusMeters} m`;
+    sub.textContent = near.length ? `Najbliższy: ${near[0].name}, ${fmtDist(near[0].walk ?? near[0].dist)}${near[0].walk != null ? ' pieszo' : ''}.`
+      : 'W okolicy nie ma żadnego przystanku.';
+    let html = '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>';
+    if (near.length) {
+      const need = Math.min(2000, Math.ceil((near[0].dist + 50) / 100) * 100);
+      html += `<div class="group-label">Najbliższe przystanki</div><div class="stop-list near-list">` + near.map(g =>
+        `<div class="stop-item clickable" role="button" tabindex="0" data-stop-id="${esc(g.id)}" title="Pokaż odjazdy z tego przystanku">`
+        + `<div class="si-top"><b>${esc(g.name)}</b><span class="si-dist">${g.walk != null ? fmtDist(g.walk) + ' pieszo' : fmtDist(g.dist)}</span></div>`
+        + `<div class="si-meta">${Math.round(g.dist)} m w linii prostej</div></div>`).join('') + '</div>'
+        + (need > radiusMeters ? `<button type="button" class="link-btn" style="margin-top:8px" data-radius-to="${need}">Pokaż linie w promieniu ${need} m</button>` : '');
+    }
+    results.innerHTML = html;
+    renderIsoBox();
+    announce();
+    refreshPlace();
+    return;
+  }
+
+  const b = badgesHtml(nearby, pointReach, placeStatsFor(nearby));
+  title.textContent = `${b.count} ${linii(b.count)} w pobliżu`;
+  const nNames = new Set(nearby.map(s => s.name)).size;
+  sub.textContent = `${nNames} ${przystanki(nNames)} w promieniu ${radiusMeters} m`
+    + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'linia nocna', 'linie nocne', 'linii nocnych')}` : '') + '.';
+
+  let html = '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>';
+  html += `<div id="lines-box">${b.html}</div>`;
+  html += '<div id="line-detail"></div>';
+  // Jedna pozycja na nazwę przystanku (ZTP ma osobny słupek na każdy kierunek/peron)
+  const byName = new Map();
+  nearby.forEach(s => {
+    const g = byName.get(s.name);
+    const wm = pointReach ? pointReach.get(s.id) : undefined;
+    if (g) {
+      g.count++;
+      if (wm != null && (g.walk == null || wm < g.walk)) { g.walk = wm; g.id = s.id; }
+    } else byName.set(s.name, { id: s.id, name: s.name, dist: s.dist, count: 1, walk: wm });
+  });
+  const km = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toLocaleString('pl', { maximumFractionDigits: 1 })} km`;
+  const nUn = [...byName.values()].filter(g => g.walk === null).length;
+  html += '<div class="group-label" style="margin-top:14px">Przystanki</div>';
+  if (nUn) html += `<div class="unreach-note"><i></i>${nUn === 1 ? '1 przystanek' : `${nUn} ${nUn % 10 >= 2 && nUn % 10 <= 4 && (nUn % 100 < 12 || nUn % 100 > 14) ? 'przystanki' : 'przystanków'}`} w okręgu bez dojścia pieszo z tego miejsca (np. za rzeką albo torami).</div>`;
+  // kolejność: najkrótsze dojście pieszo (jeśli znane), przystanki bez dojścia na końcu
+  const sortKey = g => g.walk === null ? Infinity : g.walk != null ? g.walk : g.dist;
+  const groups = [...byName.values()].sort((a, b) => sortKey(a) - sortKey(b) || a.dist - b.dist);
+  html += '<div class="stop-list">' + groups.map(g => {
+    // nazwa + dojście pieszo (kolumna); pod spodem odległość w linii prostej
+    const un = g.walk === null, known = g.walk != null;
+    const right = un ? '' : known ? `${km(g.walk)} pieszo` : `${Math.round(g.dist)} m`;
+    const meta = un ? `<em>brak dojścia pieszo</em> · ${Math.round(g.dist)} m w linii prostej`
+      : known ? `${Math.round(g.dist)} m w linii prostej` : '';
+    return `<div class="stop-item clickable${un ? ' unreach' : ''}" role="button" tabindex="0" data-stop-id="${esc(g.id)}"`
+      + ` title="${un ? 'Nie da się tu dojść pieszo z zaznaczonego miejsca' : 'Pokaż odjazdy z tego przystanku'}">`
+      + `<div class="si-top"><b>${esc(g.name)}</b><span class="si-dist">${right}</span></div>`
+      + (meta ? `<div class="si-meta">${meta}</div>` : '') + '</div>';
+  }).join('') + '</div>';
+
+  document.getElementById('results').innerHTML = html;
+  updateBadgeSelection();
+  renderLineDetail();
+  renderIsoBox();
+  announce();
+  refreshPlace();
+}
+
+const fmtDist = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toLocaleString('pl', { maximumFractionDigits: 1 })} km`;
+
+// Najbliższe przystanki (po nazwie), gdy w okręgu nie ma żadnego: dojście po ulicach, jeśli jest sieć piesza
+function nearestOutside(c) {
+  const cand = STOPS.map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, dist: haversineMeters(c.lat, c.lng, s.lat, s.lon) }))
+    .filter(s => s.dist <= 3000).sort((a, b) => a.dist - b.dist).slice(0, 60);
+  let r = null;
+  if (WALK) { const nn = nearestNode(c.lat, c.lng); if (nn) r = walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], 45, { walkOnly: true }); }
+  const SI = STOP_INDEX(), byName = new Map();
+  cand.forEach(s => {
+    let walk = null;
+    if (r) { const k = SI.get(s.id), sn = WALK.snapNode[k]; if (sn >= 0 && isFinite(r.time[sn])) walk = r.time[sn] * WALK_SPEED + WALK.snapLen[k]; }
+    const key = walk ?? s.dist * 1.3, g = byName.get(s.name);
+    if (!g || key < g.key) byName.set(s.name, { ...s, walk, key });
+  });
+  return [...byName.values()].sort((a, b) => a.key - b.key).slice(0, 3);
+}
+
+function setRadius(m, fromSlider) {
+  radiusMeters = Math.min(2000, Math.max(200, Math.round(m / 100) * 100));
+  if (!fromSlider) radiusInput.value = radiusMeters;
+  radiusVal.textContent = radiusMeters + ' m';
+  if (radiusCircle && !stopMode) {
+    radiusCircle.setRadius(radiusMeters);
+    recompute(radiusCircle.getLatLng());   // promień zmienia tylko listę linii; zasięg i dojazdy się nie zmieniają
+    syncURL(false);
+  }
+}
+
+// Typ dnia (roboczy / sobota / niedziela) — wspólny dla częstotliwości, dojazdów do celów i zasięgu "typowy dzień"
+function setDayType(d) {
+  if (!DAY_NAMES[d] || d === isoDay) return;
+  isoDay = d;
+  reach = null; placeStats = null;
+  if (iso && iso.mode === 'typical') computeIso();
+  if (stopMode || radiusCircle) refreshPlace();
+  syncURL(false);
+}
+
+// ---------------------------------------------------------------------------
+// "Jak stąd dojedziesz": podsumowanie miejsca, czasy dojazdu do celów i własne miejsca.
+// Czasy z modelu "typowy dzień" (średnie czekanie), liczone raz do REACH_T i wspólne z mapą zasięgu.
+// ---------------------------------------------------------------------------
+const DESTS = [
+  { name: 'Rynek Główny', lat: 50.06170, lon: 19.93730 },
+  { name: 'Dworzec Główny', lat: 50.06770, lon: 19.94740 },
+  { name: 'AGH (al. Mickiewicza)', lat: 50.06540, lon: 19.92290 },
+  { name: 'Kampus UJ (Ruczaj)', lat: 50.02464, lon: 19.90251 },
+  { name: 'Nowa Huta, pl. Centralny', lat: 50.07180, lon: 20.03760 },
+  { name: 'Lotnisko Balice', lat: 50.07163, lon: 19.80018 },
+];
+const PLACES_KEY = 'mapa.mojeMiejsca';
+let myPlaces = (() => { try { const v = JSON.parse(localStorage.getItem(PLACES_KEY) || '[]'); return Array.isArray(v) ? v.filter(p => p && Number.isFinite(p.lat) && Number.isFinite(p.lon)) : []; } catch (e) { return []; } })();
+function saveMyPlaces() { try { localStorage.setItem(PLACES_KEY, JSON.stringify(myPlaces)); } catch (e) { /* tryb prywatny: tylko do końca sesji */ } }
+function destById(id) { const n = +id.slice(1); return id[0] === 'm' ? myPlaces[n] : DESTS[n]; }
+function removeMyPlace(i) {
+  myPlaces.splice(i, 1); saveMyPlaces();
+  renderPlaceCard(); renderTargetBox();
+}
+const samePlace = (a, b) => a && b && Math.abs(a.lat - b.lat) < 2e-5 && Math.abs(a.lon - b.lon) < 2e-5;
+
+let reach = null, placeStats = null, placeToken = 0;
+function reachFor(o) { return { o, ...typicalRun(o), walk: true, mode: 'typical', day: isoDay }; }
+// przystanki, z których liczymy częstotliwość: wybrany przystanek albo przystanki w okręgu z dojściem pieszo
+function placePoles() {
+  if (stopMode) return stopMode.poles;
+  return lastNearby.filter(s => !pointReach || pointReach.get(s.id) !== null);
+}
+
+// Statystyki odjazdów z przystanków (deps/) dla reprezentatywnego dnia danego typu
+const statsDone = new Map(), statsPending = new Map();
+const statsKey = poles => isoDay + ':' + poles.map(p => p.id).sort().join(',');
+function placeStatsFor(stops) {
+  const poles = stopMode ? stops : stops.filter(s => !pointReach || pointReach.get(s.id) !== null);
+  return statsDone.get(statsKey(poles)) || null;
+}
+function repDate(day) {
+  const days = Object.keys(META.calendar).sort();
+  const want = day === 's' ? [6] : day === 'n' ? [0] : [2, 3, 4, 1, 5];   // dzień roboczy: najlepiej wt–czw
+  for (const w of want) { const d = days.find(x => new Date(x + 'T12:00').getDay() === w); if (d) return d; }
+  return days[0];
+}
+function lineStats(poles) {
+  if (!META || !META.calendar || !poles.length) return Promise.resolve(null);
+  const key = statsKey(poles);
+  if (statsDone.has(key)) return Promise.resolve(statsDone.get(key));
+  if (statsPending.has(key)) return statsPending.get(key);
+  const prof = profileFor(repDate(isoDay));
+  const p = Promise.all([...new Set(poles.map(cellOf))].map(loadCell)).then(cells => {
+    if (!prof) return null;
+    const per = new Map();
+    let first = Infinity, last = -Infinity, lastKey = null;
+    poles.forEach(s => cells.forEach(cell => Object.entries(cell[s.id] || {}).forEach(([k, arr]) => {
+      const night = isNight(k);
+      let day = 0, all = 0;
+      arr.forEach(e => (e.t[e.p[prof.p]] || []).forEach(m => {
+        all++;
+        if (m >= 360 && m < 1200) day++;
+        if (!night) { if (m < first) first = m; if (m > last) { last = m; lastKey = k; } }
+      }));
+      // odstęp liczymy z przystanku (słupka), na którym linia jeździ najczęściej — to jeden kierunek
+      const cur = per.get(k) || { maxPole: 0, all: 0 };
+      cur.maxPole = Math.max(cur.maxPole, day); cur.all += all;
+      per.set(k, cur);
+    })));
+    // kursy na godzinę w jedną stronę, suma linii dziennych (ta sama linia na kilku przystankach liczy się raz)
+    let perHour = 0;
+    per.forEach((v, k) => { if (!isNight(k)) perHour += v.maxPole / 14; });
+    return { per, perHour, first, last, lastKey };
+  }).then(v => { statsDone.set(key, v); statsPending.delete(key); return v; });
+  statsPending.set(key, p);
+  return p;
+}
+function applyLineStats() {
+  const box = document.getElementById('lines-box');
+  if (!box) return;
+  const stops = stopMode ? stopMode.poles : lastNearby;
+  if (!stops.length) return;
+  box.innerHTML = badgesHtml(stops, stopMode ? null : pointReach, placeStats).html;
+  updateBadgeSelection();
+}
+
+function refreshPlace() {
+  const token = ++placeToken;
+  const o = isoOrigin();
+  if (!o) return;
+  const poles = placePoles();
+  placeStats = statsDone.get(statsKey(poles)) || null;
+  const fresh = reach && reach.day === isoDay && originKey(reach.o) === originKey(o);
+  if (!fresh) reach = null;
+  renderPlaceCard();
+  renderTargetBox();
+  const needStats = !placeStats && META && META.calendar && poles.length;
+  if (!needStats && fresh) return;
+  (async () => {
+    const stP = needStats ? lineStats(poles) : null;
+    if (WALK === null) await loadWalk();
+    else await new Promise(r => setTimeout(r, 0));   // najpierw pinezka i panel na ekranie, potem liczenie (~40 ms)
+    if (token !== placeToken) return;
+    if (WALK && !reach) reach = reachFor(o);
+    if (stP) placeStats = await stP;
+    if (token !== placeToken) return;
+    renderPlaceCard();
+    if (stP) applyLineStats();
+    renderTargetBox();
+  })();
+}
+
+// ile linii nocnych jeździ z przystanków miejsca (tych, do których da się dojść)
+function nightCount() {
+  const ks = new Set();
+  placePoles().forEach(s => s.lines.forEach(l => { const k = `${l.ref}|${l.type}`; if (isNight(k)) ks.add(k); }));
+  return ks.size;
+}
+function linesChips(lines) {
+  const seen = new Set();
+  return lines.filter(l => { const k = l.ref + '|' + l.type; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map(l => `<span class="${l.type === 'tram' ? 't' : 'b'}">${esc(l.ref)}</span>`).join('');
+}
+function routeSummary(r) {
+  if (!r || !isFinite(r.t)) return '';
+  if (!r.rides) return 'pieszo';
+  return linesChips(r.lines) + (r.rides > 1 ? ` · ${r.rides - 1} ${plural(r.rides - 1, 'przesiadka', 'przesiadki', 'przesiadek')}` : '')
+    + (r.walkMin >= 1 ? ` · pieszo ${Math.round(r.walkMin)} min` : '');
+}
+
+function renderPlaceCard() {
+  const el = document.getElementById('place-card');
+  if (!el) return;
+  const o = isoOrigin();
+  if (!o) { el.innerHTML = ''; return; }
+  const dayWord = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' }[isoDay];
+  const facts = [];
+  if (!stopMode && lastNearby.length) {
+    let best = null;
+    lastNearby.forEach(s => {
+      const w = pointReach ? pointReach.get(s.id) : s.dist * 1.3;
+      if (w != null && (!best || w < best.w)) best = { s, w };
+    });
+    if (best) facts.push(`Najbliższy przystanek: <b>${esc(best.s.name)}</b>, ${fmtDist(best.w)} pieszo (${Math.max(1, Math.round(best.w / WALK_SPEED))} min)`);
+  }
+  const st = placeStats;
+  if (st) {
+    let top = null;
+    st.per.forEach((v, k) => { if (!isNight(k) && v.maxPole && (!top || v.maxPole > top.v.maxPole)) top = { k, v }; });
+    if (st.perHour >= 0.5) {
+      const n = Math.round(st.perHour);
+      facts.push(`W godz. 6–20 łącznie ok. <b>${n} ${plural(n, 'kurs', 'kursy', 'kursów')} na godzinę</b> w jedną stronę`
+        + (top ? `, najczęściej <b>${esc(top.k.split('|')[0])}</b> co ${Math.max(1, Math.round(840 / top.v.maxPole))} min` : ''));
+    } else if (st.perHour > 0) facts.push('W godz. 6–20 <b>mniej niż 1 kurs na godzinę</b>');
+    else facts.push(`<b>${dayWord[0].toUpperCase() + dayWord.slice(1)} w godz. 6–20 nic stąd nie odjeżdża</b>`);
+    const hm = m => fmt(m).replace(/^0/, '');
+    if (isFinite(st.first)) facts.push(`Kursy dzienne od <b>${hm(st.first)}</b> do <b>${hm(st.last)}</b>`
+      + (nightCount() ? `, w nocy ${nightCount()} ${plural(nightCount(), 'linia nocna', 'linie nocne', 'linii nocnych')}` : ', w nocy nic'));
+  } else if (META && META.calendar && placePoles().length) facts.push('<span class="muted">Liczę częstotliwość kursów…</span>');
+
+  // cele: moje miejsca, potem stałe
+  const all = [...myPlaces.map((p, i) => ({ ...p, id: 'm' + i, mine: i })), ...DESTS.map((p, i) => ({ ...p, id: 'f' + i }))];
+  let destHtml;
+  if (WALK === false) destHtml = '<div class="muted" style="margin-top:8px">Czasy dojazdu wymagają sieci pieszej (walk.bin).</div>';
+  else if (!reach) destHtml = '<div class="muted" style="margin-top:8px">Liczę czasy dojazdu…</div>';
+  else {
+    destHtml = `<div class="dests-h">Czas dojazdu ${dayWord}, z czekaniem na przystanku</div><div class="dests">` + all.map(d => {
+      const r = routeTo(reach, d.lat, d.lon);
+      const ok = r && isFinite(r.t);
+      const time = ok ? `${Math.max(1, Math.round(r.t))} min${r.rides ? '' : ' pieszo'}` : `ponad ${REACH_T} min`;
+      return `<div class="dest${samePlace(d, target) ? ' on' : ''}" role="button" tabindex="0" data-dest="${d.id}" title="Pokaż trasę na mapie">`
+        + `<span class="dn">${d.mine != null ? '★ ' : ''}${esc(d.name)}</span>`
+        + `<span class="dt${ok ? '' : ' far'}">${time}${d.mine != null ? `<button type="button" class="del" data-place-del="${d.mine}" title="Usuń z moich miejsc" aria-label="Usuń ${esc(d.name)} z moich miejsc">×</button>` : ''}</span>`
+        + (ok && r.rides ? `<span class="dl">${routeSummary(r)}</span>` : '') + '</div>';
+    }).join('') + '</div>';
+  }
+  el.innerHTML = `<div class="place-card">
+    <div class="pc-top"><h3>Jak stąd dojedziesz</h3>
+      <select id="day-type" aria-label="Typ dnia">${Object.entries(DAY_NAMES).map(([k, v]) =>
+        `<option value="${k}"${k === isoDay ? ' selected' : ''}>${v[0].toUpperCase() + v.slice(1)}</option>`).join('')}</select></div>
+    ${facts.length ? `<ul class="pc-facts">${facts.map(f => `<li>${f}</li>`).join('')}</ul>` : ''}
+    ${destHtml}
+    <div class="pc-actions"><button type="button" class="link-btn" data-pick-target="1">${pickingTarget ? 'Anuluj wskazywanie celu' : '+ Wskaż własny cel na mapie'}</button></div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Cel podróży: klik na mapie (w trybie zasięgu albo po "Wskaż cel"), wiersz listy albo link (#cel=).
+// Trasa liczona z mapy zasięgu, jeśli jest włączona (także "wyjazd o godzinie"), inaczej z typowego dnia.
+// ---------------------------------------------------------------------------
+let target = null, pickingTarget = false, targetLayer = null;
+const targetIcon = L.divIcon({
+  className: '',
+  html: `<svg width="24" height="34" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg">
+    <path d="M13 0C5.8 0 0 5.8 0 13c0 9.5 13 23 13 23s13-13.5 13-23C26 5.8 20.2 0 13 0z" fill="#184f95"/>
+    <path d="M9 7.5v11M9 8h8l-2 3 2 3H9" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
+  iconSize: [24, 34], iconAnchor: [12, 34],
+});
+const targetClickMode = () => pickingTarget || !!iso;
+function targetCtx() {
+  if (iso && iso.walk) return iso;
+  const o = isoOrigin();
+  return reach && o && reach.day === isoDay && originKey(reach.o) === originKey(o) ? reach : null;
+}
+function setPicking(on) {
+  if (pickingTarget === !!on) return;
+  pickingTarget = !!on;
+  if (map) map.getContainer().classList.toggle('picking', pickingTarget);
+  showNotice(pickingTarget ? 'Kliknij cel podróży na mapie albo przystanek. Esc anuluje.' : '');
+  renderPlaceCard();
+}
+function nearestStopName(lat, lon) {
+  let best = null;
+  STOPS.forEach(s => { const d = haversineMeters(lat, lon, s.lat, s.lon); if (d < 600 && (!best || d < best.d)) best = { d, s }; });
+  return best ? best.s.name : null;
+}
+function setTarget(lat, lon, label, fromList) {
+  const mine = myPlaces.find(p => samePlace(p, { lat, lon })) || DESTS.find(p => samePlace(p, { lat, lon }));
+  target = { lat, lon, label: label || (mine && mine.name) || null };
+  setPicking(false);
+  renderTargetBox();
+  renderPlaceCard();
+  syncURL(true);
+  // pokaż start i cel razem (bez przybliżania)
+  const o = isoOrigin();
+  const b = L.latLngBounds([[lat, lon]].concat(o ? [[o.lat, o.lon]] : []));
+  if (!map.getBounds().pad(-0.1).contains(b)) map.fitBounds(b, { padding: [60, 60], maxZoom: map.getZoom() });
+  document.getElementById('target-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function clearTarget() {
+  target = null;
+  renderTargetBox();
+  renderPlaceCard();
+  syncURL(true);
+}
+function drawTarget(r, C) {
+  if (targetLayer) { map.removeLayer(targetLayer); targetLayer = null; }
+  if (!target || !map) return;
+  const ok = r && r.legs && isFinite(r.t);
+  const parts = ok ? legLayers(r.legs, null, C) : [];
+  const pin = L.marker([target.lat, target.lon], { icon: targetIcon, interactive: false, keyboard: false, zIndexOffset: 500 });
+  // czas dojazdu przy samej pinezce — widać go bez szukania w panelu
+  if (r) pin.bindTooltip(ok ? `${Math.max(1, Math.round(r.t))} min` : `> ${C && C.mode === 'time' ? ISO_TMAX : REACH_T} min`,
+    { permanent: true, direction: 'right', offset: [12, -18], className: 'term-label' });
+  parts.push(pin);
+  targetLayer = L.layerGroup(parts).addTo(map);
+}
+function renderTargetBox(saving = false) {
+  const el = document.getElementById('target-box');
+  if (!target) { drawTarget(); if (el) el.innerHTML = ''; return; }
+  const C = targetCtx(), o = isoOrigin();
+  const r = C && o ? routeTo(C, target.lat, target.lon) : null;
+  drawTarget(r, C);
+  if (!el) return;
+  const name = target.label || (nearestStopName(target.lat, target.lon) ? `okolice: ${nearestStopName(target.lat, target.lon)}` : 'wskazane miejsce');
+  let body;
+  const horizon = C && C.mode === 'time' ? ISO_TMAX : REACH_T;
+  if (!o) body = '<div class="muted">Wybierz miejsce startu na mapie.</div>';
+  else if (!C) body = `<div class="muted">${WALK === false ? 'Trasy wymagają sieci pieszej (walk.bin).' : 'Liczę trasę…'}</div>`;
+  else if (!r || !isFinite(r.t)) body = `<div class="tb-time">ponad ${horizon} min</div><div class="muted">W ${horizon} min stąd tam nie dojedziesz${C.mode === 'time' ? ' o tej godzinie' : ''}.</div>`;
+  else {
+    const extra = [];
+    if (C.csa) extra.push(`na miejscu ${fmt(Math.round(C.csa.t0 + r.t))}`);
+    if (r.rides > 1) extra.push(`${r.rides - 1} ${plural(r.rides - 1, 'przesiadka', 'przesiadki', 'przesiadek')}`);
+    if (!r.rides) extra.push('pieszo');
+    body = `<div class="tb-time">${Math.max(1, Math.round(r.t))} min${extra.length ? ` <span>· ${extra.join(' · ')}</span>` : ''}</div>`
+      + `<div class="sh-legs">${legsText(r.legs, C)}</div>`
+      + `<div class="muted" style="margin-top:4px">${C.mode === 'time' ? `Wyjazd ${fmt(C.csa.t0)}, prawdziwe odjazdy.` : `Typowy ${DAY_NAMES[isoDay]}, ze średnim czekaniem.`}</div>`;
+  }
+  const saved = myPlaces.some(p => samePlace(p, target));
+  const actions = saving
+    ? `<input id="place-name" type="text" maxlength="40" value="${esc(target.label || nearestStopName(target.lat, target.lon) || '')}" placeholder="Nazwa, np. Praca" aria-label="Nazwa miejsca">
+       <button type="button" class="chip on" data-target-save-ok="1">Zapisz</button><button type="button" class="link-btn" data-target-save-cancel="1">Anuluj</button>`
+    : (saved ? '' : '<button type="button" class="link-btn" data-target-save="1">★ Zapisz jako moje miejsce</button>')
+      + (o ? '<button type="button" class="link-btn" data-target-origin="1">Licz stąd</button>' : '');
+  el.innerHTML = `<div class="target-box">
+    <div class="tb-top"><div class="tb-name">Cel: <b>${esc(name)}</b></div><button type="button" class="link-btn" data-target-clear="1" aria-label="Usuń cel">Usuń cel</button></div>
+    ${body}<div class="tb-actions">${actions}</div></div>`;
+  if (saving) { const inp = document.getElementById('place-name'); inp.focus(); inp.select(); }
+}
+function saveTargetAsPlace() {
+  if (!target) return;
+  const inp = document.getElementById('place-name');
+  const name = (inp && inp.value.trim()) || nearestStopName(target.lat, target.lon) || 'Moje miejsce';
+  myPlaces.push({ name: name.slice(0, 40), lat: +target.lat.toFixed(5), lon: +target.lon.toFixed(5) });
+  saveMyPlaces();
+  target.label = name;
+  renderTargetBox(false);
+  renderPlaceCard();
+}
+
+// Esc: kolejno anuluje wskazywanie celu, cel, linię, mapę zasięgu
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || (e.target.matches && e.target.matches('input[type=text], input[type=time], select, textarea'))) return;
+  if (pickingTarget) setPicking(false);
+  else if (target) clearTarget();
+  else if (selectedRouteKey) selectRoute(selectedRouteKey);
+  else if (iso) { clearIso(); renderIsoBox(); syncURL(true); }
+  else return;
+  e.preventDefault();
+});
+
+// telefon: panel pod mapą da się rozwinąć
+const panelToggle = document.getElementById('panel-toggle');
+panelToggle.addEventListener('click', () => {
+  const on = document.getElementById('layout').classList.toggle('expanded');
+  panelToggle.setAttribute('aria-expanded', on);
+  panelToggle.textContent = on ? 'Mniej' : 'Więcej';
+  setTimeout(() => map && map.invalidateSize(), 230);
+});
+
+loadStops().then(() => {
+  indexStops();
+  initMap();
+  setLoading('data', null);
+  renderDataInfo();
+  if (location.hash.length > 1) applyState();
+  window.addEventListener('popstate', applyState);
+});
+</script>
+</body>
+</html>
