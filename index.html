@@ -1036,6 +1036,9 @@ function setLoading(job, text) {
 const dmy = iso => { const [y, m, d] = iso.split('-'); return `${+d}.${m}.${y}`; };
 
 // stopka panelu: z kiedy jest rozkład i na jakie dni
+// przewoźnicy z meta.sources w dopełniaczu: „Rozkład ZTP i Kolei Małopolskich”
+const SRC_GEN = { 'ZTP Kraków': 'ZTP', 'Koleje Małopolskie': 'Kolei Małopolskich' };
+const srcGen = src => (src && src.length ? src : ['ZTP Kraków']).map(x => SRC_GEN[x] || x).join(' i ');
 function renderDataInfo() {
   const el = document.getElementById('data-info');
   if (!META || !META.calendar) { el.textContent = ''; return; }
@@ -1046,7 +1049,7 @@ function renderDataInfo() {
   el.classList.toggle('stale', stale);
   el.innerHTML = (stale
       ? `<b>Rozkład jest nieaktualny</b> — obejmuje dni ${dmy(first)}–${dmy(last)}, więc pokazuję rozkład z tego samego dnia tygodnia. `
-      : `Rozkład ZTP z ${dmy(META.generated || first)}, odjazdy na dni ${dmy(first)}–${dmy(last)}. `)
+      : `Rozkład ${srcGen(META.sources)} z ${dmy(META.generated || first)}, odjazdy na dni ${dmy(first)}–${dmy(last)}. `)
     + `${nNames} ${przystanki(nNames)}.`;
 }
 
@@ -1587,7 +1590,7 @@ function renderLineDetail() {
   const hw = isNight(key) ? 'linia nocna' : hwText(key, placeStats);
 
   let html = `<div class="ld-head"><span class="ld-num ${route.type}">${esc(route.ref)}</span>
-    <div class="ld-ttl"><div class="ld-kind">${kind}${hw && hw !== 'nie kursuje' ? ` · ${hw}` : ''}</div>
+    <div class="ld-ttl"><div class="ld-kind">${kind}${route.op ? ` · ${esc(route.op)}` : ''}${hw && hw !== 'nie kursuje' ? ` · ${hw}` : ''}</div>
     <div class="ld-name">${esc(route.name || kind)}</div></div>
     <button type="button" class="ld-close" data-line-close="1" aria-label="Zamknij linię ${esc(route.ref)}" title="Zamknij linię (Esc)">✕</button></div>`;
 

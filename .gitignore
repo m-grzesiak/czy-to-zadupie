@@ -1,5 +1,6 @@
 # surowe dane — zostają lokalnie (README: aktualizacja danych)
-GTFS_KRK_*
+*.zip
+GTFS_KRK_*/
 walk_osm/
 *.osm.pbf
 # kopie zapasowe strony

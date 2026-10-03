@@ -30,6 +30,7 @@ Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą ob
 | `build_walk_graph.py` | OSM → `walk.bin` + `transfers.bin` + dopisanie przystanków do sieci ulic | nie |
 | `download_walk.sh` | pobieranie sieci pieszej z OpenStreetMap (zapytanie Overpass jest w środku) | nie |
 | `GTFS_KRK_*.zip` / `GTFS_KRK_*/` | surowe rozkłady ZTP | nie |
+| `ald-gtfs.zip` | surowy rozkład autobusów Kolei Małopolskich (Małopolskie Linie Dowozowe) | nie |
 | `walk_osm/` | surowa sieć ulic z OSM (~95 MB) | nie |
 
 ## Wymagania
@@ -42,38 +43,43 @@ Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą ob
 
 Wszystkie polecenia uruchamiaj w folderze projektu (`cd ~/Projects/mapa`).
 
-### 1. Pobierz aktualne rozkłady ZTP
+### 1. Pobierz aktualne rozkłady ZTP i Kolei Małopolskich
 
 ```
 curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip
 curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip
 curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_M.zip
+curl -o ald-gtfs.zip "https://gtfs.kolejemalopolskie.com.pl/?download=L2hvbWUvYnByb2cvcm96a2xhZHlfamF6ZHkvYWxkLWd0ZnMuemlw"
 ```
 
 - **A:** autobusy MPK (miasto i gminy ościenne).
 - **T:** tramwaje.
 - **M:** autobusy Mobilis.
+- **ald-gtfs:** autobusy Kolei Małopolskich (Małopolskie Linie Dowozowe, linie A1…A74) — na https://gtfs.kolejemalopolskie.com.pl/ plik „mld-gtfs.zip” w sekcji „Rozkłady Handlowe” (nie `GTFS.zip` z sekcji MLD, to dane do pozycji na żywo). Wiele linii jedzie daleko poza Kraków; na mapę trafia tylko odcinek w obszarze mapy. Feed nie ma `shapes.txt`, więc trasy tych linii to proste odcinki między przystankami.
 
-Aktualną listę plików znajdziesz na https://gtfs.ztp.krakow.pl/.
+Aktualną listę plików znajdziesz na https://gtfs.ztp.krakow.pl/ i https://gtfs.kolejemalopolskie.com.pl/.
 
 ### 2. Wygeneruj przystanki, trasy i rozkład
 
 ```
-python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip -o stops_data.json
+python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip ald-gtfs.zip -o stops_data.json
 ```
 
 Skrypt przyjmuje pliki ZIP albo rozpakowane katalogi (np. `GTFS_KRK_A`). Trwa ok. 10 s. Na końcu wypisuje podsumowanie, które warto sprawdzić:
 
 ```
-Zapisano 4098 przystanków, 23 linii tramwajowych, 195 autobusowych do stops_data.json (2.0 MB)
-Odjazdy: 243 plików w deps/ (3.7 MB), 14 dni od 2026-09-27, 5 różnych profili dnia
-Połączenia: 75 plików w conns/ (15.3 MB), profil 0: 209,586, profil 1: 357,192, ...
+  ald-gtfs.zip: 2877 przystanków poza obszarem mapy pominięto
+  ald-gtfs.zip: 548 przystanków dostało nazwę przystanku ZTP w tym samym miejscu
+Połączenia: 75 plików w conns/ (16.1 MB), profil 0: 231,807, profil 1: 217,234, ...
+Zapisano 5365 przystanków, 23 linii tramwajowych, 223 autobusowych do stops_data.json (2.3 MB)
+Odjazdy: 342 plików w deps/ (4.0 MB), 14 dni od 2026-10-03, 5 różnych profili dnia
 ```
 
 Przydatne opcje:
 - **`--days 21`:** na ile dni do przodu zapisać odjazdy (domyślnie 14).
 - **`--date 2026-10-05`:** od którego dnia liczyć (domyślnie dziś).
 - **`--inspect`:** nic nie generuje, tylko pokazuje strukturę plików GTFS. Przydatne, gdy ZTP zmieni format.
+- **`--bbox S,W,N,E`:** obszar mapy; przystanki spoza niego są pomijane (domyślnie obszar sieci pieszej z `download_walk.sh`: `49.89,19.57,50.26,20.37`). Zmieniasz go razem z zapytaniem w `download_walk.sh`.
 
 Rozkład obejmuje tylko okno dni od wygenerowania. Po jego końcu strona pokazuje rozkład z tego samego dnia tygodnia i informuje o tym. Dlatego dane trzeba odświeżać przynajmniej raz na 1–2 tygodnie.
 
@@ -100,8 +106,8 @@ python3 build_walk_graph.py stops_data.json walk_osm/*.json -o walk.bin
 Trwa ok. 15 s. Sprawdź w podsumowaniu, czy wszystkie przystanki zostały przyklejone:
 
 ```
-Zapisano transfers.bin: 25,500 przesiadek pieszych do 500 m (0.1 MB)
-Zapisano walk.bin: 226,306 węzłów, 283,288 krawędzi, ... (6.9 MB). Przystanki przyklejone: 4098/4098
+Zapisano transfers.bin: 33,606 przesiadek pieszych do 500 m (0.2 MB)
+Zapisano walk.bin: 227,382 węzłów, 284,364 krawędzi, ... (6.9 MB). Przystanki przyklejone: 5365/5365
 ```
 
 Jeśli pominiesz ten krok, strona dalej działa, ale mapa zasięgu liczy dojścia w przybliżeniu (linia prosta × 1,3) i pisze o tym pod legendą.
@@ -112,7 +118,7 @@ Jeśli pominiesz ten krok, strona dalej działa, ale mapa zasięgu liczy dojści
 python3 -m http.server 8000
 ```
 
-Otwórz http://localhost:8000/ i odśwież bez pamięci podręcznej (Cmd+Shift+R). Na dole panelu powinno być napisane „Rozkład ZTP z <data>, odjazdy na dni <od>–<do>. … przystanków” z dzisiejszą datą generowania. Jeśli zamiast tego widać żółtą ramkę „Dane przykładowe”, strona nie wczytała `stops_data.json`. Jeśli napis jest pomarańczowy („Rozkład jest nieaktualny”), wykonaj kroki 1–4.
+Otwórz http://localhost:8000/ i odśwież bez pamięci podręcznej (Cmd+Shift+R). Na dole panelu powinno być napisane „Rozkład ZTP i Kolei Małopolskich z <data>, odjazdy na dni <od>–<do>. … przystanków” z dzisiejszą datą generowania. Jeśli zamiast tego widać żółtą ramkę „Dane przykładowe”, strona nie wczytała `stops_data.json`. Jeśli napis jest pomarańczowy („Rozkład jest nieaktualny”), wykonaj kroki 1–4.
 
 Strony nie da się otworzyć podwójnym kliknięciem (`file://`). Przeglądarka zablokuje wtedy wczytanie danych, a serwer OSM kafelki mapy. Strona musi być pod adresem `http://…`.
 
@@ -132,7 +138,8 @@ Strona wczytuje dane ścieżkami względnymi, więc działa też pod podkatalogi
 ```
 cd ~/Projects/mapa
 curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip -O https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip -O https://gtfs.ztp.krakow.pl/GTFS_KRK_M.zip
-python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip -o stops_data.json
+curl -o ald-gtfs.zip "https://gtfs.kolejemalopolskie.com.pl/?download=L2hvbWUvYnByb2cvcm96a2xhZHlfamF6ZHkvYWxkLWd0ZnMuemlw"
+python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip ald-gtfs.zip -o stops_data.json
 python3 build_walk_graph.py stops_data.json walk_osm/*.json -o walk.bin
 ```
 

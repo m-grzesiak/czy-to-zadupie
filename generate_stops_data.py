@@ -6,14 +6,17 @@ Zamienia jeden lub więcej plików GTFS (ZIP) na plik stops_data.json, którego
 oczekuje index.html (strona): przystanki + linie na każdym z nich, oraz
 geometria (kształt) każdej linii do narysowania jej całej trasy na mapie.
 
-Skąd wziąć dane (ZTP Kraków, https://gtfs.ztp.krakow.pl/):
+Skąd wziąć dane:
+  ZTP Kraków, https://gtfs.ztp.krakow.pl/:
     GTFS_KRK_A.zip  — autobusy (miasto + gminy ościenne)
     GTFS_KRK_T.zip  — tramwaje (z shapes.txt)
     GTFS_KRK_M.zip  — trzeci feed ZTP (autobusy innego operatora/aglomeracyjne)
+  Koleje Małopolskie, https://gtfs.kolejemalopolskie.com.pl/:
+    mld-gtfs.zip    — autobusy Małopolskich Linii Dowozowych (A1…A74)
 Podaj wszystkie jako argumenty — skrypt scali je w jedną bazę.
 
 Użycie:
-  python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip -o stops_data.json
+  python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip mld-gtfs.zip -o stops_data.json
   python3 generate_stops_data.py --inspect GTFS_KRK_T.zip     # podgląd struktury plików
 
 Opcje:
@@ -23,6 +26,9 @@ Opcje:
   --inspect          nic nie generuj, tylko wypisz pliki/nagłówki/przykładowe wiersze
   --days N           na ile dni do przodu zapisać rozkład odjazdów (domyślnie 14)
   --date RRRR-MM-DD  pierwszy dzień rozkładu (domyślnie dziś)
+  --bbox S,W,N,E     obszar mapy: przystanki poza nim są pomijane (domyślnie obszar sieci pieszej
+                     z download_walk.sh: 49.89,19.57,50.26,20.37). Linie, które wyjeżdżają poza obszar
+                     (np. MLD do Olkusza), zostają z samym odcinkiem w obszarze.
 
 Wynik: stops_data.json (przystanki, linie, trasy, czasy przejazdu) + katalog deps/
 z odjazdami podzielonymi na kawałki siatki ~2 km (strona pobiera tylko potrzebny).
@@ -47,6 +53,8 @@ from pathlib import Path
 # route_type: podstawowe (0 tram, 3 bus, 11 trolejbus) + rozszerzone (9xx tram, 7xx bus, 800 trolejbus)
 TRAM_TYPES = {"0", "5"} | {str(x) for x in range(900, 907)}
 BUS_TYPES = {"3", "11", "800"} | {str(x) for x in range(700, 717)}
+# obszar mapy = obszar sieci pieszej (download_walk.sh); przystanki spoza niego nie mają ulic do zasięgu
+DEFAULT_BBOX = (49.89, 19.57, 50.26, 20.37)
 
 
 # ---------------------------------------------------------------------------
@@ -113,12 +121,33 @@ def iter_csv(zf: zipfile.ZipFile, name: str):
 
 
 def feed_mode_hint(source: str):
-    """Z nazwy pliku ZTP (GTFS_KRK_T / _A / _M) zgadnij tryb, gdyby route_type był nietypowy."""
+    """Z nazwy pliku ZTP (GTFS_KRK_T / _A / _M) albo KMŁ (mld-/ald-gtfs) zgadnij tryb, gdyby route_type był nietypowy."""
     base = source.rsplit("/", 1)[-1].upper()
     if re.search(r"_T(\.|_|$)", base) or "TRAM" in base:
         return "tram"
-    if re.search(r"_[AM](\.|_|$)", base) or "BUS" in base:
+    if re.search(r"_[AM](\.|_|$)", base) or "BUS" in base or re.match(r"(MLD|ALD)\b", base):
         return "bus"
+    return None
+
+
+def norm_stop_name(n: str) -> str:
+    """Nazwa do porównań między przewoźnikami: bez „Kraków ” na początku, numeru słupka na końcu i interpunkcji."""
+    n = re.sub(r"^Kraków\s+", "", n)
+    n = re.sub(r"\s+\d{1,2}$", "", n)
+    return re.sub(r"[\W_]+", "", n.lower())
+
+
+def display_stop_name(n: str) -> str:
+    """Nazwa przystanku spoza ZTP w stylu ZTP: bez „Kraków ” (ZTP nie pisze miasta) i numeru słupka („Cło 01” → „Cło”)."""
+    n = re.sub(r"^Kraków\s+", "", n)
+    return re.sub(r"\s+\d{1,2}$", "", n).strip() or n
+
+
+def feed_operator(source: str):
+    """Przewoźnik pokazywany przy linii (ZTP / MPK nie — to domyślny). Koleje Małopolskie: MLD / ALD."""
+    base = source.rsplit("/", 1)[-1].upper()
+    if re.match(r"(MLD|ALD)\b", base) or "KOLEJE" in base or "KML" in base:
+        return "Koleje Małopolskie"
     return None
 
 
@@ -233,7 +262,9 @@ def cell_of(lat, lon):
 
 
 class Merger:
-    def __init__(self, max_variants: int, tolerance: float, dates):
+    def __init__(self, max_variants: int, tolerance: float, dates, bbox=DEFAULT_BBOX):
+        self.bbox = bbox                         # (S, W, N, E) albo None = bez przycinania
+        self.sources = []                        # przewoźnicy w danych (stopka strony)
         self.max_variants = max_variants
         self.tolerance = tolerance
         self.dates = dates                      # lista dt.date — okno rozkładu
@@ -271,6 +302,10 @@ class Merger:
     # -- jeden feed -----------------------------------------------------------
     def process(self, zf, source: str, tag: str):
         hint = feed_mode_hint(source)
+        op = feed_operator(source)
+        label = op or "ZTP Kraków"
+        if label not in self.sources:
+            self.sources.append(label)
         n_before = len(self.stops)
         self.load_calendar(zf, tag)
 
@@ -283,10 +318,36 @@ class Merger:
             if color and (not re.fullmatch(r"[0-9A-Fa-f]{6}", color) or color.upper() in ("FFFFFF", "000000")):
                 color = None  # ZTP daje autobusom FFFFFF — biała linia byłaby niewidoczna
             lname = r.get("route_long_name") or ""
-            routes[r["route_id"]] = (ref, mode, color, "" if lname == ref else lname)
+            routes[r["route_id"]] = (ref, mode, color, "" if lname == ref else lname, op)
 
         # stops (te same ID w różnych feedach scalamy, jeśli to ten sam punkt; inaczej prefiks feedu)
+        # przystanki innych przewoźników (KMŁ) dostają nazwę przystanku ZTP w tym samym miejscu,
+        # żeby na stronie były jednym przystankiem („Kraków AGH/UR” = „AGH / UR”, „Kraków Biskupa Prandoty” = „bp. Prandoty”)
+        ztp_grid = defaultdict(list)
+        if op:
+            for g, st in self.stops.items():
+                ztp_grid[(round(st["lat"] / 0.002), round(st["lon"] / 0.003))].append(st)
+        renamed = 0
+
+        def ztp_name(lat, lon, name):
+            nn = norm_stop_name(name)
+            best = None
+            ci, cj = round(lat / 0.002), round(lon / 0.003)
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    for st in ztp_grid.get((ci + di, cj + dj), ()):
+                        d = haversine((lat, lon), (st["lat"], st["lon"]))
+                        same = norm_stop_name(st["name"]) == nn
+                        # ta sama nazwa do 150 m albo inna pisownia, ale praktycznie to samo miejsce (do 50 m)
+                        if (same and d <= 150) or d <= 50:
+                            score = d - (1000 if same else 0)
+                            if best is None or score < best[0]:
+                                best = (score, st["name"])
+            return best[1] if best else None
+
         local_to_global = {}
+        all_names = {}       # stop_id -> nazwa, także przystanków poza obszarem (kierunek kursu)
+        outside = set()      # stop_id poza obszarem mapy
         parent_name = {}
         stop_rows = list(iter_csv(zf, "stops.txt"))
         for r in stop_rows:
@@ -301,6 +362,18 @@ class Merger:
                 continue
             sid = r["stop_id"]
             name = r.get("stop_name") or parent_name.get(r.get("parent_station", ""), "") or sid
+            all_names[sid] = display_stop_name(name) if op else name
+            if self.bbox and not (self.bbox[0] <= lat <= self.bbox[2] and self.bbox[1] <= lon <= self.bbox[3]):
+                outside.add(sid)
+                continue
+            pole = None
+            if op:
+                m_pole = re.search(r"\s(\d{2})$", name)   # „Kraków Cło 01” — numer słupka w nazwie
+                pole = m_pole.group(1) if m_pole else None
+                zn = ztp_name(lat, lon, name)
+                if zn:
+                    renamed += 1
+                name = zn or display_stop_name(name)
             gid = sid
             existing = self.stops.get(gid)
             if existing and haversine((existing["lat"], existing["lon"]), (lat, lon)) > 30:
@@ -308,10 +381,14 @@ class Merger:
             local_to_global[sid] = gid
             if gid not in self.stops:
                 self.stops[gid] = {"id": gid, "name": name, "lat": round(lat, 6), "lon": round(lon, 6)}
-                # numer słupka z tablicy ZTP ("802-01" -> "01"; zapasowo stop_desc)
-                code = (r.get("stop_code") or "").rsplit("-", 1)[-1].strip()
-                if not re.fullmatch(r"\d{1,3}", code):
-                    code = (r.get("stop_desc") or "").strip()
+                # numer słupka z tablicy ZTP ("802-01" -> "01"; zapasowo stop_desc).
+                # Inni przewoźnicy mają w stop_code własne numery (np. KMŁ „900”) — u nich tylko numer z nazwy.
+                if op:
+                    code = pole or ""
+                else:
+                    code = (r.get("stop_code") or "").rsplit("-", 1)[-1].strip()
+                    if not re.fullmatch(r"\d{1,3}", code):
+                        code = (r.get("stop_desc") or "").strip()
                 if re.fullmatch(r"\d{1,3}", code):
                     self.stops[gid]["c"] = code
 
@@ -353,46 +430,51 @@ class Merger:
         # stop_times — jeden strumieniowy przebieg; zakładamy, że wiersze kursu leżą obok siebie
         # (tak jest w ZTP), a jeśli nie, powtarzamy w trybie "wszystko w pamięci".
         try:
-            local = self._scan_stop_times(zf, trips, local_to_global, grouped=True)
+            local = self._scan_stop_times(zf, trips, local_to_global, all_names, grouped=True)
         except NotGrouped:
             print(f"  {source}: stop_times nie jest pogrupowany po trip_id — wolniejszy tryb", file=sys.stderr)
-            local = self._scan_stop_times(zf, trips, local_to_global, grouped=False)
+            local = self._scan_stop_times(zf, trips, local_to_global, all_names, grouped=False)
         stop_route_pairs, pattern_count, pattern_dir, reps, deps, n_st, csa_local = local
         for (srv, rid, h, g, arr, dep) in csa_local:
-            ref, mode, _, _ = routes[rid]
+            ref, mode, _, _, _ = routes[rid]
             self.csa_trips.append((srv, f"{ref}|{mode}", h, g, arr, dep))
 
         missing_stops = 0
         for sid, rid in stop_route_pairs:
             gid = local_to_global.get(sid)
             if gid is None:
-                missing_stops += 1
+                if sid not in outside:
+                    missing_stops += 1
                 continue
-            ref, mode, _, _ = routes[rid]
+            ref, mode, _, _, _ = routes[rid]
             self.stop_lines[gid][(ref, mode)] = {"ref": ref, "type": mode}
         if missing_stops:
             self.warnings.append(f"{source}: {missing_stops} par przystanek-linia wskazuje na stop_id spoza stops.txt")
 
         for (gid, rid, h), by_srv in deps.items():
-            ref, mode, _, _ = routes[rid]
+            ref, mode, _, _, _ = routes[rid]
             tgt = self.deps[(gid, f"{ref}|{mode}", h)]
             for srv, mins in by_srv.items():
                 tgt[srv].extend(mins)
 
         for rid, counter in pattern_count.items():
-            ref, mode, color, lname = routes[rid]
+            ref, mode, color, lname, rop = routes[rid]
+            if not any(local_to_global.get(s) for s in self._pattern_stops(rid, counter, reps)):
+                continue   # linia w całości poza obszarem mapy
             if not lname and headsigns.get(rid):
                 best = {}
                 for (d, h), c in headsigns[rid].most_common():
                     best.setdefault(d, h)
                 ends = list(dict.fromkeys(best[d] for d in sorted(best)))
+                if len(ends) < 2:   # bez direction_id (np. KMŁ): dwa najczęstsze różne kierunki
+                    ends = list(dict.fromkeys(h for (d, h), c in headsigns[rid].most_common()))
                 lname = " – ".join(ends[:2])
-            entry = self.routes.setdefault((ref, mode), {"color": color, "name": lname, "cands": []})
+            entry = self.routes.setdefault((ref, mode), {"color": color, "name": lname, "op": rop, "cands": []})
             entry["color"] = entry["color"] or color
             entry["name"] = entry["name"] or lname
             for key, cnt in counter.items():
                 if key[0] == "shape":
-                    pts = shape_pts[key[1]]
+                    pts = self._clip_line(shape_pts[key[1]])
                 else:
                     pts = [[self.stops[local_to_global[s]]["lat"], self.stops[local_to_global[s]]["lon"]]
                            for s in key[1] if s in local_to_global]
@@ -400,17 +482,49 @@ class Merger:
                 info = None
                 if rep:
                     _, h, seq = rep
-                    info = {"h": h, "s": [[local_to_global[s], off] for s, off in seq if s in local_to_global]}
+                    kept = [(local_to_global[s], off) for s, off in seq if s in local_to_global]
+                    # czasy od pierwszego przystanku w obszarze (kurs mógł zacząć się np. w Olkuszu)
+                    base = next((off for _, off in kept if off is not None), 0)
+                    info = {"h": h, "s": [[g, off - base if off is not None else None] for g, off in kept]}
+                    if len(info["s"]) < 2:
+                        info = None
                 if len(pts) >= 2:
                     entry["cands"].append((cnt, pattern_dir.get((rid, key), ""), pts, info))
 
         n_days = sum(1 for d in self.dates if any(x.startswith(tag + "/") for x in self.date_services[d]))
+        if outside:
+            print(f"  {source}: {len(outside)} przystanków poza obszarem mapy pominięto", file=sys.stderr)
+        if op:
+            print(f"  {source}: {renamed} przystanków dostało nazwę przystanku ZTP w tym samym miejscu", file=sys.stderr)
         print(f"  {source}: {len(routes)} linii, {len(self.stops) - n_before} nowych przystanków, "
               f"{len(trips)} kursów, {n_st:,} wierszy stop_times, "
               f"{'shapes.txt' if shape_pts else 'BEZ shapes.txt (trasy z kolejności przystanków)'}, "
               f"rozkład na {n_days}/{len(self.dates)} dni", file=sys.stderr)
 
-    def _scan_stop_times(self, zf, trips, local_to_global, grouped):
+    @staticmethod
+    def _pattern_stops(rid, counter, reps):
+        """Przystanki wzorców linii (do sprawdzenia, czy linia ma choć jeden przystanek w obszarze)."""
+        out = []
+        for key in counter:
+            if key[0] == "stops":
+                out.extend(key[1])
+            rep = reps.get((rid, key))
+            if rep:
+                out.extend(s for s, _ in rep[2])
+        return out
+
+    def _clip_line(self, pts):
+        """Kształt trasy przycięty do obszaru mapy (z zapasem ~1 km): od pierwszego do ostatniego punktu w środku."""
+        if not self.bbox:
+            return pts
+        s, w, n, e = self.bbox
+        m = 0.01
+        inside = [i for i, (la, lo) in enumerate(pts) if s - m <= la <= n + m and w - m <= lo <= e + m]
+        if not inside:
+            return []
+        return pts[inside[0]:inside[-1] + 1]
+
+    def _scan_stop_times(self, zf, trips, local_to_global, all_names, grouped):
         stop_route_pairs = set()
         pattern_count = defaultdict(Counter)       # route_id -> Counter(pattern_key)
         pattern_dir = {}
@@ -438,8 +552,7 @@ class Merger:
             sub_count[(rid, key)][stops_seq] += 1
             first = rows[0][2]
             if not h:
-                last = local_to_global.get(rows[-1][1])
-                h = self.stops[last]["name"] if last else ""
+                h = all_names.get(rows[-1][1], "")
             if first is not None:
                 off = [(r[1], (r[2] - first) if r[2] is not None else None) for r in rows]
                 score = abs(first - 660)
@@ -447,8 +560,9 @@ class Merger:
                 if k3 not in best_trip or score < best_trip[k3][0]:
                     best_trip[k3] = (score, h, off)
             if srv in wanted_services:
+                # przystanki poza obszarem mapy = None; połączenia z nimi pomija result()
                 g = [local_to_global.get(r[1]) for r in rows]
-                if all(g) and all(r[2] is not None and r[4] is not None for r in rows):
+                if sum(1 for x in g if x) >= 2 and all(r[2] is not None and r[4] is not None for r in rows):
                     csa_local.append((srv, rid, h, g, [r[4] for r in rows], [r[2] for r in rows]))
                 for r in rows[:-1]:                 # z ostatniego przystanku nie ma odjazdu
                     if r[2] is None or r[3] == "1":  # pickup_type=1: nie zabiera pasażerów
@@ -577,6 +691,7 @@ class Merger:
                         v[3][field] = headway(f"{ref}|{mode}", v[3], srvset)
             routes_out[f"{ref}|{mode}"] = {
                 "ref": ref, "type": mode, "color": e["color"], "name": e["name"],
+                **({"op": e["op"]} if e.get("op") else {}),
                 "shapes": [[rnd(p) for p in simplify(v[2], self.tolerance)] for v in variants],
                 "trips": [v[3] for v in variants],
             }
@@ -627,7 +742,7 @@ class Merger:
                     hd_idx[h] = len(head_names); head_names.append(h)
                 trips_tab.append((rk_idx[lkey], hd_idx[h]))
                 for j in range(len(g) - 1):
-                    a, b = sidx.get(g[j]), sidx.get(g[j + 1])
+                    a, b = sidx.get(g[j]) if g[j] else None, sidx.get(g[j + 1]) if g[j + 1] else None
                     if a is None or b is None or arr[j + 1] < dep[j]:
                         continue
                     conns.append((dep[j], arr[j + 1], a, b, ti))
@@ -641,6 +756,7 @@ class Merger:
 
         meta = {
             "generated": dt.date.today().isoformat(),
+            "sources": self.sources,
             "calendar": date_profile,
             "deps": {"dlat": DLAT, "dlon": DLON, "path": "deps/"},
             "conns": {"path": "conns/", "window": CONN_WINDOW, "routes": route_keys, "heads": head_names,
@@ -656,6 +772,7 @@ def main():
         sys.exit(0 if args else 1)
 
     out_path, variants, tol, do_inspect, days, start = "stops_data.json", 4, 4.0, False, 14, dt.date.today()
+    bbox = DEFAULT_BBOX
     sources = []
     i = 0
     while i < len(args):
@@ -670,12 +787,17 @@ def main():
             days = int(args[i + 1]); i += 2
         elif a == "--date":
             start = dt.date.fromisoformat(args[i + 1]); i += 2
+        elif a == "--bbox":
+            v = args[i + 1].lower(); i += 2
+            bbox = None if v in ("none", "0", "") else tuple(float(x) for x in v.split(","))
+            if bbox and len(bbox) != 4:
+                raise SystemExit("--bbox: podaj S,W,N,E (np. 49.89,19.57,50.26,20.37) albo none")
         elif a == "--inspect":
             do_inspect = True; i += 1
         else:
             sources.append(a); i += 1
 
-    m = Merger(variants, tol, [start + dt.timedelta(days=k) for k in range(days)])
+    m = Merger(variants, tol, [start + dt.timedelta(days=k) for k in range(days)], bbox)
     for n, src in enumerate(sources):
         with open_feed(src) as zf:
             if do_inspect:
