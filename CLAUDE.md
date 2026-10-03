@@ -104,7 +104,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
   - `refreshPlace` najpierw rysuje panel, a `reach` liczy w następnym zadaniu (`setTimeout 0`), żeby klik był natychmiastowy.
   - Rysowanie to `IsoTiles` (L.GridLayer) + `drawIsoTile` z indeksem krawędzi `edgeIndex`.
   - Ścieżki: `walkLegsFrom(v, C)`, `legLayers` / `drawLegs`, `routeTo(C, lat, lon)`; `C` to kontekst `{o, res, walk1, csa}` — `iso` albo `reach` (też `legsText`, `csaLegs`, `csaRideInfo`). Hover w dowolnym miejscu: `pointHover` z `bestReachableNode`. Opis etapów (`legsText`): każdy przejazd w osobnym wierszu z przystankiem wsiadania i wysiadania, liczbą przystanków, czasem jazdy i czekaniem.
-  - Włączenie zasięgu chowa wybraną linię. `fitIsoView` po włączeniu i każdej zmianie czasu dopasowuje widok do samego obszaru (`isoBounds`: węzły ulic osiągalne w T) z małym marginesem — przybliża i oddala, przybliżenie ułamkowe co 0,25 (`zoomSnap` tylko na czas dopasowania; + − wracają do pełnych poziomów).
+  - Włączenie zasięgu chowa wybraną linię. `fitIsoView` po włączeniu i każdej zmianie czasu dopasowuje widok do samego obszaru (`isoBounds`: węzły ulic osiągalne w T) z minimalnym marginesem (6 px) — przybliża i oddala, przybliżenie ułamkowe co 0,05 (`zoomSnap` tylko na czas dopasowania; + − wracają do pełnych poziomów).
   - Bez `walk.bin` działa fallback: `runIso` / `drawIso` (kółka, linia prosta × 1,3).
 - **Model zasięgu, tryb „typowy dzień”** (`isoMode = 'typical'`, `isoDay` = w/s/n → `applyDayType`):
   - czekanie = `hw*/2` bez limitu,

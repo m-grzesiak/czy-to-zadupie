@@ -2840,8 +2840,8 @@ function isoBounds() {
   }
   return L.latLngBounds([s, w], [n, e]);
 }
-// Widok zasięgu: sam obszar z małym marginesem (przybliża i oddala), w widocznej części mapy.
-// Przybliżenie ułamkowe (co 0,25), żeby obszar wypełniał widok, a nie jego połowę; przyciski + − wracają do pełnych.
+// Widok zasięgu: sam obszar z minimalnym marginesem (przybliża i oddala), w widocznej części mapy.
+// Przybliżenie ułamkowe (co 0,05), żeby obszar wypełniał widok, a nie jego połowę; przyciski + − wracają do pełnych.
 // onlyOut: tylko oddal, gdy obszar się nie mieści (nie używane przy zmianie czasu ani włączeniu).
 function fitIsoView(onlyOut = false) {
   if (!iso) return;
@@ -2849,8 +2849,8 @@ function fitIsoView(onlyOut = false) {
   if (!b.isValid()) return;
   if (onlyOut && viewBounds().contains(b)) return;
   const snap = map.options.zoomSnap;
-  map.options.zoomSnap = 0.25;
-  map.fitBounds(b, { ...fitPad(isMobile() ? 16 : 28), maxZoom: onlyOut ? map.getZoom() : 16 });
+  map.options.zoomSnap = 0.05;
+  map.fitBounds(b, { ...fitPad(6), maxZoom: onlyOut ? map.getZoom() : 16 });
   map.options.zoomSnap = snap;
 }
 let isoToken = 0;
