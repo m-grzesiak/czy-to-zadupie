@@ -671,7 +671,8 @@
     #app.st-empty header{ display:flex; }
     #layout{ display:block; flex:1; }
     #map{ position:absolute; inset:0; }
-    .leaflet-control-zoom{ display:none; }
+    .leaflet-control-zoom.leaflet-bar{ border:0; border-radius:12px; box-shadow:0 2px 10px rgba(28,28,26,.18); overflow:hidden; margin-right:12px; margin-bottom:8px; }
+    .leaflet-control-zoom a{ width:42px; height:42px; line-height:42px; font-size:22px; }
     .leaflet-top{ top:env(safe-area-inset-top); }
     .leaflet-top.leaflet-right .leaflet-control{ margin-top:12px; margin-right:12px; }
     /* atrybucja i legenda zawsze nad arkuszem (--sheet-h ustawia JS) */
@@ -941,10 +942,16 @@ function updateSheet() {
     if (!first && isMobile()) { clearTimeout(revealTimer); revealTimer = setTimeout(revealFocus, 280); }
   }
 }
-// ile pikseli mapy od dołu zasłania arkusz (na komputerze 0)
+// ile pikseli mapy od dołu zasłania arkusz (na komputerze 0). Dla „peek” i „full” docelowa wysokość
+// z CSS (46% / całość bez 68 px), a nie chwilowa — w trakcie animacji arkusza wysokość jest pośrednia.
 function sheetPx() {
   if (!isMobile()) return 0;
-  const a = layoutEl.getBoundingClientRect(), p = panelEl.getBoundingClientRect();
+  const a = layoutEl.getBoundingClientRect();
+  if (!panelEl.classList.contains('iso-open') && !appEl.classList.contains('st-empty')) {
+    if (layoutEl.classList.contains('sheet-full')) return Math.round(a.height - 68);
+    if (layoutEl.classList.contains('sheet-peek')) return Math.round(a.height * 0.46);
+  }
+  const p = panelEl.getBoundingClientRect();
   return Math.max(0, Math.round(a.bottom - p.top));
 }
 const topUi = () => isMobile() ? 64 : 0;   // przyciski na górze mapy
@@ -962,6 +969,11 @@ function panToVisible(ll, animate = true) {
   const s = map.getSize(), top = topUi(), h = Math.max(40, s.y - top - sheetPx());
   const want = L.point(s.x / 2, top + h / 2);
   map.panBy(map.latLngToContainerPoint(ll).subtract(want), { animate });
+}
+// setView, ale z punktem na środku widocznej części mapy (nad arkuszem), nie całego ekranu
+function setViewVisible(ll, z) {
+  map.setView(ll, z, { animate: false });
+  if (isMobile()) panToVisible(ll, false);
 }
 function revealFocus() {
   if (!map || !isMobile()) return;
@@ -1231,7 +1243,7 @@ document.getElementById('results').addEventListener('click', (e) => {
   if (e.target.closest('[data-ld-before]')) { ldBefore = true; renderLdPane(detailToken); return; }
   if (e.target.closest('[data-ld-early]')) { ldEarly = true; renderLdPane(detailToken); return; }
   const ex = e.target.closest('[data-example]');
-  if (ex) { const [la, lo] = ex.dataset.example.split(',').map(Number); const ll = L.latLng(la, lo); selectPoint(ll); map.setView(ll, 15); return; }
+  if (ex) { const [la, lo] = ex.dataset.example.split(',').map(Number); const ll = L.latLng(la, lo); selectPoint(ll); setViewVisible(ll, 15); return; }
   const del = e.target.closest('[data-place-del]');
   if (del) { e.stopPropagation(); removeMyPlace(+del.dataset.placeDel); return; }
   const dst = e.target.closest('[data-dest]');
@@ -1727,6 +1739,47 @@ const clickIcon = L.divIcon({
   iconAnchor: [13, 36],
 });
 
+// Przyciski + − (na telefonie w prawym dolnym rogu, nad arkuszem). Przybliżają wokół środka WIDOCZNEJ
+// części mapy, a nie całego kontenera — na telefonie dolną część mapy zasłania arkusz.
+let zoomCtl = null;
+function zoomVisible(d) {
+  const s = map.getSize(), top = topUi(), h = Math.max(40, s.y - top - sheetPx());
+  const z = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), map.getZoom() + d));
+  if (z !== map.getZoom()) map.setZoomAround(L.point(s.x / 2, top + h / 2), z);
+}
+const ZoomControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd(m) {
+    const box = L.DomUtil.create('div', 'leaflet-control-zoom leaflet-bar');
+    box.innerHTML = '<a class="leaflet-control-zoom-in" href="#" role="button" title="Przybliż" aria-label="Przybliż">+</a>'
+      + '<a class="leaflet-control-zoom-out" href="#" role="button" title="Oddal" aria-label="Oddal">&#x2212;</a>';
+    L.DomEvent.disableClickPropagation(box);
+    const [zin, zout] = box.children;
+    L.DomEvent.on(zin, 'click', e => { L.DomEvent.preventDefault(e); zoomVisible(1); });
+    L.DomEvent.on(zout, 'click', e => { L.DomEvent.preventDefault(e); zoomVisible(-1); });
+    const sync = () => {
+      zin.classList.toggle('leaflet-disabled', m.getZoom() >= m.getMaxZoom());
+      zout.classList.toggle('leaflet-disabled', m.getZoom() <= m.getMinZoom());
+    };
+    m.on('zoomend zoomlevelschange', sync);
+    sync();
+    return box;
+  },
+});
+
+// Granice mapy. Na telefonie z zapasem na dole: dolną część mapy zasłania arkusz, a Leaflet pilnuje granic
+// dla całego kontenera — bez zapasu dopasowanie widoku (zasięg, trasa) nie mogło zejść niżej i obszar uciekał pod arkusz.
+let dataBoundsBase = null;
+function applyMaxBounds() {
+  if (!map || !dataBoundsBase) return;
+  let b = dataBoundsBase;
+  if (isMobile()) {
+    const span = b.getNorth() - b.getSouth();
+    b = L.latLngBounds([b.getSouth() - span, b.getWest()], [b.getNorth() + span * 0.12, b.getEast()]);
+  }
+  map.setMaxBounds(b);
+}
+
 // Przycisk "moja lokalizacja" (pod + −, na telefonie w prawym górnym rogu): zaznacza punkt w miejscu użytkownika
 let locateCtl = null;
 const LocateControl = L.Control.extend({
@@ -1752,7 +1805,7 @@ function locateMe(box) {
     selectPoint(ll);
     const near = STOPS.some(s => haversineMeters(ll.lat, ll.lng, s.lat, s.lon) < 5000);
     if (!near) showNotice('Jesteś poza obszarem, który obejmują dane (Kraków i okolice).');
-    map.setView(ll, Math.max(map.getZoom(), 15));
+    setViewVisible(ll, Math.max(map.getZoom(), 15));
   }, err => {
     box.classList.remove('busy');
     showNotice(err.code === 1 ? 'Nie mam zgody na lokalizację. Zezwól na nią w ustawieniach przeglądarki albo kliknij miejsce na mapie.'
@@ -1782,7 +1835,7 @@ function baseStopStyle(s) {
 function restyleStops() { highlightStops(hlIds, hlUnreach); }
 
 function initMap() {
-  map = L.map('map', { zoomControl: true, preferCanvas: true, renderer: L.canvas({ tolerance: COARSE ? 10 : 2 }) })
+  map = L.map('map', { zoomControl: false, preferCanvas: true, renderer: L.canvas({ tolerance: COARSE ? 10 : 2 }) })
     .setView([50.0619, 19.9368], 14);
 
   // Oficjalne kafelki OpenStreetMap. Blokują żądania bez realnego Referera (stąd 403
@@ -1796,6 +1849,7 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
 
+  zoomCtl = new ZoomControl({ position: isMobile() ? 'bottomright' : 'topleft' }).addTo(map);
   locateCtl = new LocateControl({ position: isMobile() ? 'topright' : 'topleft' }).addTo(map);
   // legenda kolorów przystanków (lewy dolny róg, obok atrybucji)
   const Legend = L.Control.extend({
@@ -1836,7 +1890,8 @@ function initMap() {
   // Mapa tylko w obszarze danych: prostokąt wszystkich przystanków + margines. Nie da się jej przesunąć
   // poza niego, a najmniejsze przybliżenie to takie, przy którym widać cały obszar (zależy od ekranu).
   const dataBounds = L.latLngBounds(STOPS.map(s => [s.lat, s.lon])).pad(0.06);
-  map.setMaxBounds(dataBounds);
+  dataBoundsBase = dataBounds;
+  applyMaxBounds();
   map.options.maxBoundsViscosity = 1;   // twarda krawędź, bez "gumowego" odbicia
   const fitMinZoom = () => map.setMinZoom(Math.max(8, map.getBoundsZoom(dataBounds, false)));
   fitMinZoom();
@@ -3474,13 +3529,13 @@ async function applyState() {
     const pt = (p.get('p') || '').split(',').map(Number);
     if (s) {
       selectStop(s);
-      if (!inView([s.lat, s.lon])) map.setView([s.lat, s.lon], Math.max(map.getZoom(), 15));
+      if (!inView([s.lat, s.lon])) setViewVisible(L.latLng(s.lat, s.lon), Math.max(map.getZoom(), 15));
     } else if (pt.length === 2 && pt.every(Number.isFinite)) {
       const r = +p.get('r');
       if (r >= 200 && r <= 2000) { radiusMeters = Math.round(r / 100) * 100; radiusInput.value = radiusMeters; radiusVal.textContent = radiusMeters + ' m'; syncRseg(); }
       const ll = L.latLng(pt[0], pt[1]);
       selectPoint(ll);
-      if (!inView(ll)) map.setView(ll, Math.max(map.getZoom(), 15));
+      if (!inView(ll)) setViewVisible(ll, Math.max(map.getZoom(), 15));
     } else {
       showEmpty();
     }
@@ -4167,7 +4222,12 @@ panelEl.addEventListener('touchend', e => {
 }, { passive: true });
 new ResizeObserver(setSheetVar).observe(panelEl);
 MQ_MOBILE.addEventListener('change', () => {
-  if (locateCtl) locateCtl.setPosition(isMobile() ? 'topright' : 'topleft');
+  if (zoomCtl && locateCtl) {   // kolejność jak przy starcie: na komputerze + − nad lokalizacją
+    locateCtl.remove();
+    zoomCtl.setPosition(isMobile() ? 'bottomright' : 'topleft');
+    locateCtl.setPosition(isMobile() ? 'topright' : 'topleft').addTo(map);
+  }
+  applyMaxBounds();
   setSheetVar();
   if (map) map.invalidateSize();
 });
