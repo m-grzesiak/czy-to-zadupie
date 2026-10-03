@@ -27,7 +27,7 @@ Funkcje:
 - **Telefon (do 760 px):** mapa na cały ekran, panel jako arkusz od dołu (CSS w `@media (max-width: 760px)`, JS: `updateSheet`, `setSheet`, `sheetPx`, `viewBounds`, `fitPad`, `panToVisible`, `revealFocus`):
   - bez miejsca karta startowa (`#app.st-empty`: tytuł nad mapą, „Sprawdź, gdzie jestem”, przykłady),
   - po stuknięciu niski arkusz `#layout.sheet-peek` (werdykt, kafelki, promień jako 4 przyciski `.rseg`), uchwyt / przesunięcie palcem → `sheet-full`; zakładki `.ptabs` / `.tabp` (punkt: Dojazdy, Linie, Przystanki; przystanek: Odjazdy, Linie, Dojazdy; na komputerze ukryte, wszystko pod sobą),
-  - wybrana linia: `#panel.line-open` (sam `#line-detail`), zasięg: `#panel.iso-open` (niski arkusz z `#iso-box` i `#target-box`; dymek celu ukryty, cel pokazuje karta),
+  - wybrana linia: `#panel.line-open` (sam `#line-detail`), zasięg: `#panel.iso-open` (niski arkusz o stałej wysokości z `#iso-box` i `#target-box`: legenda jako pasek `.iso-ramp` zamiast listy pasm, żeby arkusz nie rósł z liczbą pasm; dymek celu ukryty, cel pokazuje karta),
   - przycisk `#m-back` w lewym górnym rogu: × zamyka miejsce (`closePlace`), z linii / zasięgu „← Okolica”; lokalizacja i chip zasięgu w prawym górnym rogu, przyciski + − w prawym dolnym rogu nad arkuszem (`ZoomControl`, `zoomVisible`: przybliżają wokół środka widocznej części mapy),
   - `--sheet-h` (ResizeObserver) podnosi legendę, atrybucję i + − nad arkusz; dopasowania widoku (trasa, zasięg, cel, powrót, `setViewVisible` dla przykładów, lokalizacji i linku) liczą widoczną część mapy bez arkusza; `sheetPx` dla „peek” / „full” bierze docelową wysokość z CSS, nie chwilową z animacji.
 - **Mapa zasięgu „Gdzie dojadę w N min”**, z przystanku albo z punktu (z punktu: jeden Dijkstra od najbliższej ulicy, chodzenie bez limitu okręgu):
@@ -134,6 +134,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
 - **Kliknięcie w kontrolkę, która przerysowuje się w trakcie kliknięcia** (chip zasięgu, przycisk w dymku): Leaflet szuka `_leaflet_disable_click` od `e.target` w górę, a odłączony od DOM przycisk go nie ma, więc mapa dostaje `click` i ustawia cel. W takich kontrolkach wołaj `L.DomEvent.stopPropagation(e)` w nasłuchu na samej kontrolce.
 - **Playwright `page.route`** podaje handlerowi `(route, request)`, więc nie używaj drugiego parametru jako własnej flagi.
 - **`position` kontenera mapy:** Leaflet dopisuje `position:relative` tylko przy starcie, jeśli CSS nie ustawia innej. Na telefonie `#map` jest `absolute`, więc `#map` ma w CSS `position:relative` na stałe — inaczej po obrocie telefonu kontrolki i warstwy uciekały poza mapę.
+- **Chip zasięgu:** −, + i ✕ to ikony SVG (`CHIP_MINUS`, `CHIP_PLUS`, `CHIP_X`) w przyciskach z `justify-content:center`; znaki tekstowe nie siedziały na środku. Na ekranach dotykowych bez tła po „hover” (zostawało po stuknięciu).
 - **`maxBounds` a arkusz:** Leaflet pilnuje granic dla całego kontenera mapy. Bez zapasu na dole `fitBounds` z marginesem na arkusz nie mógł zejść niżej i przy zwiększaniu czasu zasięgu obszar uciekał pod arkusz.
 - **Arkusz w stanie „peek” ma `overflow:hidden`**: na niskich ekranach zakładki są poniżej krawędzi, dostęp przez uchwyt / przesunięcie w górę. W testach dotykowych nie stukaj w legendę ani atrybucję (są nad arkuszem).
 

@@ -379,8 +379,9 @@
   .iso-chip[hidden]{ display:none; }
   .iso-chip button{
     font:inherit; color:inherit; background:transparent; border:0; cursor:pointer;
-    height:30px; min-width:30px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; gap:6px;
+    height:30px; min-width:30px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; gap:6px;
   }
+  .iso-chip button svg{ display:block; flex:0 0 auto; }
   .iso-chip button:hover{ background:color-mix(in srgb, #1c5cab 12%, transparent); }
   .iso-chip button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
   .iso-chip.on{ background:#184f95; color:#fff; border-color:#184f95; }
@@ -593,7 +594,12 @@
   .ph-t b{ display:block; font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ph-t span{ display:block; font-size:11.5px; color:var(--ink-soft); line-height:1.25; margin-top:1px; }
   /* elementy tylko dla telefonu */
-  .rseg, .rseg-l, .ptabs, .m-back, .es-mob, .iso-tip{ display:none; }
+  .rseg, .rseg-l, .ptabs, .m-back, .es-mob, .iso-tip, .iso-ramp{ display:none; }
+  .ir-bar{ display:flex; gap:2px; height:8px; }
+  .ir-bar i{ flex:1; }
+  .ir-bar i:first-child{ border-radius:4px 0 0 4px; }
+  .ir-bar i:last-child{ border-radius:0 4px 4px 0; }
+  .ir-lab{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-soft); margin-top:3px; font-variant-numeric:tabular-nums; }
   /* --- pusty panel --- */
   .empty-state .es-lead{ margin:0 0 10px; }
   .es-locate{
@@ -756,6 +762,16 @@
     #panel.iso-open .iso-card{ border:0; padding:0; background:none; }
     .iso-hint, .iso-card > .muted:last-child{ display:none; }
     .iso-tip{ display:block; font-size:12.5px; color:var(--ink-soft); margin-top:8px; }
+    /* zasięg na telefonie: niska karta o stałej wysokości (legenda jako pasek zamiast listy pasm),
+       żeby nad arkuszem zostało dużo mapy i arkusz nie skakał przy zmianie czasu */
+    .iso-legend{ display:none; }
+    .iso-ramp{ display:block; margin-top:8px; }
+    #panel.iso-open .seg{ margin:8px 0 6px; }
+    #panel.iso-open .chips{ margin-bottom:4px; }
+    #panel.iso-open .iso-row{ margin:6px 0 2px; }
+    #panel.iso-open .iso-sum{ margin:2px 0 0; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #panel.iso-open #iso-box .chip{ padding:5px 10px; font-size:12.5px; }
+    @media (hover: none){ .iso-chip button:hover, .iso-chip.on button:hover{ background:transparent; } }
     /* na telefonie cel pokazuje karta w arkuszu, nie dymek na mapie */
     .target-pop{ display:none; }
     .tb-actions .link-btn[data-target-origin]{
@@ -2739,6 +2755,9 @@ let isoChipEl = null, hasHwCache = null;
 const hasHeadways = () => hasHwCache ?? (hasHwCache = Object.values(ROUTES).some(r => (r.trips || []).some(t => t && t.hw)));
 const ISO_ICON = `<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>`;
 const DAY_SHORT = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela' };
+const CHIP_MINUS = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const CHIP_PLUS = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7h9M7 2.5v9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const CHIP_X = '<svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 function renderIsoChip() {
   updateSheet();
   const el = isoChipEl;
@@ -2753,11 +2772,11 @@ function renderIsoChip() {
   }
   const ctx = iso.mode === 'time' ? `wyjście ${fmt(isoTime)}` : DAY_SHORT[isoDay] || '';
   el.innerHTML = `<button type="button" data-chip="edit" title="Ustawienia zasięgu w panelu">${ISO_ICON}<span class="ic-ctx">${esc(ctx)}</span></button>`
-    + `<button type="button" class="ic-step" data-chip="-" aria-label="Krócej o 5 min"${iso.T <= 10 ? ' disabled' : ''}>−</button>`
+    + `<button type="button" class="ic-step" data-chip="-" aria-label="Krócej o 5 min"${iso.T <= 10 ? ' disabled' : ''}>${CHIP_MINUS}</button>`
     + `<span class="ic-t" aria-live="polite">${iso.T} min</span>`
-    + `<button type="button" class="ic-step" data-chip="+" aria-label="Dłużej o 5 min"${iso.T >= 60 ? ' disabled' : ''}>+</button>`
+    + `<button type="button" class="ic-step" data-chip="+" aria-label="Dłużej o 5 min"${iso.T >= 60 ? ' disabled' : ''}>${CHIP_PLUS}</button>`
     + `<i class="ic-sep" aria-hidden="true"></i>`
-    + `<button type="button" class="ic-x" data-chip="off" title="Wyłącz zasięg (Esc)" aria-label="Wyłącz zasięg">✕</button>`;
+    + `<button type="button" class="ic-x" data-chip="off" title="Wyłącz zasięg (Esc)" aria-label="Wyłącz zasięg">${CHIP_X}</button>`;
 }
 function onIsoChip(e) {
   // chip przerysowuje się w trakcie kliknięcia; bez tego Leaflet nie widzi, że klik był w kontrolce, i ustawia cel
@@ -3031,7 +3050,9 @@ function renderIsoBox() {
     ${tm && iso.rides === 0 ? '<div class="iso-next" id="iso-next">Sprawdzam najbliższy odjazd…</div>' : ''}
     <div class="iso-legend">${iso.bands.map((b, i) =>
       `<i style="background:${b.color}"></i><span>${b.lo}–${b.hi} min</span><span>${counts[i]} przyst.</span>`).join('')}</div>
-    <div class="iso-tip">Stuknij miejsce na mapie — pokażę czas i trasę, a „Sprawdź to miejsce” zrobi z niego nowy start.</div>
+    <div class="iso-ramp" aria-hidden="true"><div class="ir-bar">${iso.bands.map(b => `<i style="background:${b.color}"></i>`).join('')}</div>
+      <div class="ir-lab"><span>0</span>${iso.bands.map((b, i) => `<span>${b.hi}${i === iso.bands.length - 1 ? ' min' : ''}</span>`).join('')}</div></div>
+    <div class="iso-tip">Stuknij miejsce na mapie — pokażę czas i trasę.</div>
     <div class="iso-next iso-hint" style="margin:10px 0 0"><b>Kliknij miejsce na mapie</b> — pokażę czas i trasę${COARSE ? '' : ' (albo tylko najedź kursorem)'}, a „Sprawdź to miejsce” w dymku zrobi z niego nowy start. Zasięg zostaje włączony.</div>
     <div class="muted" style="margin-top:10px">${note}</div>
   </div>`;
