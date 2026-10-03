@@ -83,7 +83,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
 ## Formaty danych
 
 - **`stops[]`:** `{id, name, lat, lon, c, lines:[{ref,type}], w:[nodeIdx, snapMeters]}`. Jeden rekord to słupek. Przystanek w UI = słupki o tej samej nazwie w promieniu 400 m. `c` to numer słupka z tablicy ZTP („01”), z `stop_code` („802-01”) albo zapasowo `stop_desc`. Słupki tramwajowy i autobusowy o tym samym numerze to to samo miejsce (jedna etykieta na mapie).
-- **`routes["ref|type"]`:** `{ref, type, color, name, op?, shapes:[[[lat,lon]…]], trips:[{h, s:[[stopId, offMin]], hw}]}`. `op` = przewoźnik spoza ZTP (pokazywany w nagłówku linii). `trips[i]` odpowiada `shapes[i]`. `hw` to średni odstęp kursów (min) w wt–czw 6:00–20:00, używany przez mapę zasięgu.
+- **`routes["ref|type"]`:** `{ref, type, color, name, op?, shapes:[[[lat,lon]…]], trips:[{h, s:[[stopId, offMin]], hw}]}`. `op` = przewoźnik spoza ZTP (pokazywany w nagłówku linii). `trips[i]` odpowiada `shapes[i]`. `hw` to średni odstęp kursów (min) w wt–czw 6:00–20:00, używany przez mapę zasięgu. `hp: {w, s, n}` — odstęp na każdym przystanku wariantu (null na końcu), z liczników odcinków `seg` w generatorze.
 - **Warianty:** do 4 najczęstszych (po równo z kierunków), plus dobór rzadkich, aż każdy przystanek linii jest w którymś wariancie. Bez tego rzadkie warianty znikały z trasy, czasów i zasięgu (błąd z linią 235 i Ochodzą Odwiśle).
 - **`meta`:** `{generated, sources:[przewoźnicy], calendar:{"RRRR-MM-DD": profil (profile o tej samej treści scalone)}, deps:{dlat, dlon, path}, walk:{path, nodes, edges}}`. `sources` trafia do stopki („Rozkład ZTP i Kolei Małopolskich”, `srcGen`). Profil to zestaw aktywnych `service_id`, dni o tym samym zestawie mają wspólny profil.
 - **`deps` komórka:** `{stopId: {"ref|type": [{h, t:[[minuty…]…], p:[indeks listy dla profilu]}]}}`. Minuty od północy, mogą przekraczać 1440 (kursy po północy). Identyczne listy są zapisane raz.
@@ -116,7 +116,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
   - Włączenie zasięgu chowa wybraną linię. `fitIsoView` po włączeniu i każdej zmianie czasu dopasowuje widok do samego obszaru (`isoBounds`: węzły ulic osiągalne w T) z minimalnym marginesem (6 px) — przybliża i oddala, przybliżenie ułamkowe co 0,05 (`zoomSnap` tylko na czas dopasowania; + − wracają do pełnych poziomów).
   - Bez `walk.bin` działa fallback: `runIso` / `drawIso` (kółka, linia prosta × 1,3).
 - **Model zasięgu, tryb „typowy dzień”** (`isoMode = 'typical'`, `isoDay` = w/s/n → `applyDayType`):
-  - czekanie = `hw*/2` bez limitu,
+  - czekanie = połowa odstępu kursów bez limitu, osobno na każdym przystanku wariantu: `trips[].hp.{w,s,n}[pos]` (odstęp ze wszystkich kursów linii jadących z tego przystanku do następnego — inne końcówki i warianty też; `setTripWaits` → `waitP[pos]`), a gdy brak — `hw*/2` wariantu. Przesiadki (np. autobus → pociąg) są liczone, ale przy pociągach co 30–60 min średnie czekanie 15–30 min sprawia, że w 20 min rzadko się opłacają; prawdziwe przesiadki pokazuje tryb „wyjazd o godzinie”,
   - chód 75 m/min po ulicach,
   - przejazd wg `offMin` reprezentatywnego kursu (najbliżej 11:00).
 - **Tryb „wyjazd o godzinie”** (`isoMode = 'time'`, `isoDate`, `isoTime`):

@@ -321,6 +321,9 @@ class Merger:
         self.routes = {}                         # (ref,mode) -> {"color","name","cands":[...]}
         self.deps = defaultdict(lambda: defaultdict(list))  # (gid, "ref|mode", headsign) -> {gsid: [min]}
         self.warnings = []
+        # odjazdy 6–20 na odcinku przystanek → następny przystanek danej linii (wszystkie kierunki/końcówki razem):
+        # (gid, "ref|mode", gid_następny) -> Counter(service) — z tego odstęp kursów na każdym przystanku wariantu
+        self.seg = defaultdict(Counter)
         self.csa_trips = []   # (service, "ref|mode", headsign, [gid], [przyjazd], [odjazd]) — do trybu "wyjazd o godzinie"
 
     # -- kalendarz ------------------------------------------------------------
@@ -488,10 +491,13 @@ class Merger:
         except NotGrouped:
             print(f"  {source}: stop_times nie jest pogrupowany po trip_id — wolniejszy tryb", file=sys.stderr)
             local = self._scan_stop_times(zf, trips, local_to_global, all_names, grouped=False)
-        stop_route_pairs, pattern_count, pattern_dir, reps, deps, n_st, csa_local = local
+        stop_route_pairs, pattern_count, pattern_dir, reps, deps, n_st, csa_local, segs = local
         for (srv, rid, h, g, arr, dep) in csa_local:
             ref, mode, _, _, _ = routes[rid]
             self.csa_trips.append((srv, f"{ref}|{mode}", h, g, arr, dep))
+        for (g, rid, gn), cnt in segs.items():
+            ref, mode, _, _, _ = routes[rid]
+            self.seg[(g, f"{ref}|{mode}", gn)].update(cnt)
 
         missing_stops = 0
         for sid, rid in stop_route_pairs:
@@ -618,6 +624,7 @@ class Merger:
         wanted_services = set().union(*self.date_services.values()) if self.date_services else set()
 
         csa_local = []
+        segs = defaultdict(Counter)
 
         def finish(tid, rows):
             t = trips.get(tid)
@@ -648,12 +655,15 @@ class Merger:
                 g = [local_to_global.get(r[1]) for r in rows]
                 if sum(1 for x in g if x) >= 2 and all(r[2] is not None and r[4] is not None for r in rows):
                     csa_local.append((srv, rid, h, g, [r[4] for r in rows], [r[2] for r in rows]))
-                for r in rows[:-1]:                 # z ostatniego przystanku nie ma odjazdu
+                for j, r in enumerate(rows[:-1]):   # z ostatniego przystanku nie ma odjazdu
                     if r[2] is None or r[3] == "1":  # pickup_type=1: nie zabiera pasażerów
                         continue
                     gid = local_to_global.get(r[1])
                     if gid:
                         deps[(gid, rid, h)][srv].append(r[2])
+                        nxt = local_to_global.get(rows[j + 1][1])
+                        if nxt and 360 <= r[2] < 1200:
+                            segs[(gid, rid, nxt)][srv] += 1
 
         n_st = 0
         if grouped:
@@ -704,7 +714,7 @@ class Merger:
             b = best_trip.get((rid, key, seq))
             if b:
                 reps[(rid, key)] = b
-        return stop_route_pairs, pattern_count, pattern_dir, reps, deps, n_st, csa_local
+        return stop_route_pairs, pattern_count, pattern_dir, reps, deps, n_st, csa_local, segs
 
     # -- wynik ----------------------------------------------------------------
     def pick_variants(self, cands):
@@ -773,6 +783,21 @@ class Merger:
                 if v[3] is not None:
                     for field, srvset in ref_srv.items():
                         v[3][field] = headway(f"{ref}|{mode}", v[3], srvset)
+                    # odstęp kursów na każdym przystanku wariantu: wszystkie kursy linii jadące do tego samego
+                    # następnego przystanku (inne końcówki i warianty też). Bez tego czekanie na stacji, przez którą
+                    # jeżdżą pociągi do kilku miast, liczyło się z kursów jednej końcówki (np. SKA2 co 120 min).
+                    hp = {}
+                    for field, srvset in (("w", ref_srv["hw"]), ("s", ref_srv["hwS"]), ("n", ref_srv["hwN"])):
+                        arr, sq = [], v[3]["s"]
+                        for j in range(len(sq)):
+                            n = 0
+                            if j + 1 < len(sq):
+                                c = self.seg.get((sq[j][0], f"{ref}|{mode}", sq[j + 1][0]))
+                                if c:
+                                    n = sum(k for srv, k in c.items() if srv in srvset)
+                            arr.append(round(840 / n, 1) if n else None)
+                        hp[field] = arr
+                    v[3]["hp"] = hp
             routes_out[f"{ref}|{mode}"] = {
                 "ref": ref, "type": mode, "color": e["color"], "name": e["name"],
                 **({"op": e["op"]} if e.get("op") else {}),

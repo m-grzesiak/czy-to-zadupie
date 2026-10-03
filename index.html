@@ -2066,12 +2066,19 @@ const originKey = o => `${o.point ? 'p' : 's'}:${o.lat.toFixed(5)},${o.lon.toFix
 function buildIsoGraph() {
   const trips = [], board = new Map();
   Object.entries(ROUTES).forEach(([key, r]) => (r.trips || []).forEach(t => {
-    if (!t || !t.s || !(t.hw || t.hwS || t.hwN)) return;
-    const s = t.s.filter(([id, off]) => off != null && STOP_BY_ID.has(id));
+    const anyHp = t && t.hp && ['w', 's', 'n'].some(d => (t.hp[d] || []).some(Boolean));
+    if (!t || !t.s || !(t.hw || t.hwS || t.hwN || anyHp)) return;
+    const keep = [];
+    t.s.forEach(([id, off], i) => { if (off != null && STOP_BY_ID.has(id)) keep.push(i); });
+    const s = keep.map(i => t.s[i]);
     if (s.length < 2) return;
     const ti = trips.length;
     const hws = { w: t.hw, s: t.hwS, n: t.hwN };
-    trips.push({ key, h: t.h, hws, wait: hws.w ? Math.min(Math.max(hws.w / 2, 1), WAIT_MAX) : Infinity, s });
+    // hp: odstęp kursów linii na każdym przystanku wariantu (wszystkie końcówki jadące dalej tą samą trasą)
+    const hp = t.hp ? Object.fromEntries(['w', 's', 'n'].map(d => [d, keep.map(i => (t.hp[d] || [])[i] ?? null)])) : null;
+    const tr = { key, h: t.h, hws, hp, s };
+    setTripWaits(tr, 'w');
+    trips.push(tr);
     s.forEach(([id], pos) => {
       if (pos === s.length - 1) return;
       if (!board.has(id)) board.set(id, []);
@@ -2132,7 +2139,7 @@ function runIso(origin, T) {
       (walk.get(id) || []).forEach(([o, d]) => relax(o, t + d / WALK_MPM, { prev: id, walk: true }));
     }
     (board.get(id) || []).forEach(([ti, pos]) => {
-      const tr = trips[ti], base = tr.s[pos][1], t0 = t + tr.wait;
+      const tr = trips[ti], base = tr.s[pos][1], t0 = t + tr.waitP[pos];
       for (let j = pos + 1; j < tr.s.length; j++) {
         const nt = t0 + (tr.s[j][1] - base);
         if (nt > T) break;
@@ -2304,7 +2311,7 @@ function walkDijkstra(seeds, T, opts = {}) {
       if (noRide) continue;
       for (let b = bStart[k]; b < bStart[k + 1]; b++) {
         const ti = bT[b], pos = bP[b], si = tsi[ti], of = tof[ti];
-        const base = of[pos], t0 = t + trips[ti].wait;
+        const base = of[pos], t0 = t + trips[ti].waitP[pos];
         for (let j = pos + 1; j < si.length; j++) {
           const nt = t0 + (of[j] - base);
           if (nt > T) break;
@@ -2724,9 +2731,16 @@ let isoMode = 'typical';                       // 'typical' | 'time'
 let isoDay = 'w';
 let isoDate = null, isoTime = null;            // tryb czasu: data ISO i minuty od północy
 const DAY_NAMES = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela / święto' };
+// Czekanie na przystanku = połowa odstępu kursów. waitP[pos]: odstęp z tego przystanku (hp), inaczej odstęp wariantu.
+function setTripWaits(tr, dt) {
+  const half = h => (h ? Math.min(Math.max(h / 2, 1), WAIT_MAX) : Infinity);
+  tr.wait = half(tr.hws[dt]);
+  const hp = tr.hp && tr.hp[dt];
+  tr.waitP = Float64Array.from(tr.s, (_, pos) => (hp && hp[pos] ? half(hp[pos]) : tr.wait));
+}
 function applyDayType(dt) {
   if (!isoGraph) isoGraph = buildIsoGraph();
-  isoGraph.trips.forEach(tr => { const h = tr.hws[dt]; tr.wait = h ? Math.min(Math.max(h / 2, 1), WAIT_MAX) : Infinity; });
+  isoGraph.trips.forEach(tr => setTripWaits(tr, dt));
 }
 const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 
@@ -2956,7 +2970,7 @@ function legsText(legs, C = iso) {
         + ` <span class="leg-note">· ${n} przyst., ${ride} min${l.wait >= 1 ? `, czekasz ${Math.round(l.wait)} min` : ''}</span>`);
     } else {
       const tr = isoGraph.trips[l.ti], a = tr.s[l.from], z = tr.s[l.to];
-      const ride = Math.round(z[1] - a[1]), wait = Math.round(tr.wait);
+      const ride = Math.round(z[1] - a[1]), wait = Math.round(tr.waitP ? tr.waitP[l.from] : tr.wait);
       parts.push(`<b class="leg-line">${esc(tr.key.split('|')[0])}</b> ${nm(a[0])} → ${nm(z[0])}`
         + ` <span class="leg-note">· ${l.to - l.from} przyst., ${ride} min${wait >= 1 ? ` + śr. ${wait} min czekania` : ''}</span>`);
     }
