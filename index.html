@@ -2271,9 +2271,15 @@ function tripIndex() {
   for (let i = 0; i < S; i++) cnt[i + 1] += cnt[i];
   const fill = cnt.slice(0, S), bT = new Int32Array(cnt[S]), bP = new Int16Array(cnt[S]);
   isoGraph.tsi.forEach((si, ti) => { for (let p = 0; p < si.length - 1; p++) { const j = fill[si[p]]++; bT[j] = ti; bP[j] = p; } });
+  // numer linii kursu (kursy jednej linii leżą obok siebie, więc na przystanku też są po kolei)
+  const lid = new Map();
+  isoGraph.tline = Int32Array.from(isoGraph.trips, tr => (lid.has(tr.key) || lid.set(tr.key, lid.size), lid.get(tr.key)));
   Object.assign(isoGraph, { bStart: cnt, bT, bP });
   return isoGraph;
 }
+
+// ile wolniej od najszybszej może jechać linia, żeby i tak wsiąść w pierwszy pojazd, który przyjedzie
+const rideSlack = d => Math.max(3, 0.2 * d);
 
 // Dijkstra po węzłach ulic (0..N-1) i przystankach (N..N+S-1)
 function walkDijkstra(seeds, T, opts = {}) {
@@ -2281,14 +2287,21 @@ function walkDijkstra(seeds, T, opts = {}) {
   const G = tripIndex(), trips = G.trips;
   const time = new Float64Array(M).fill(Infinity);   // Float64: porównanie z kolejką musi być dokładne
   const prev = new Int32Array(M).fill(-1), kind = new Int8Array(M), via = new Int32Array(M);
-  const rFrom = new Int16Array(M), rTo = new Int16Array(M), noWalk = new Uint8Array(M);
+  const rFrom = new Int16Array(M), rTo = new Int16Array(M), rWait = new Float32Array(M), noWalk = new Uint8Array(M);
   const heap = new TypedHeap(1 << 16);
+  let curWait = 0;
   const relax = (v, t, u, k, x, f, g) => {
     if (t > T || t >= time[v]) return;
     time[v] = t; prev[v] = u; kind[v] = k; via[v] = x;
-    if (k === 3) { rFrom[v] = f; rTo[v] = g; }
+    if (k === 3) { rFrom[v] = f; rTo[v] = g; rWait[v] = curWait; }
     heap.push(t, v);
   };
+  // wspólne linie: na przystanku czekasz na pierwszy pojazd z linii, które dowiozą do celu (prawie) tak
+  // szybko jak najszybsza, więc ich częstotliwości się sumują (np. A6 i A17 z Mietniowa do Wieliczki)
+  const { tline } = G;
+  const minR = new Float64Array(S), acc = new Float64Array(S), best = new Float64Array(S);
+  const vm = new Int32Array(S), gm = new Int32Array(S), touched = new Int32Array(S);
+  let vs = 0, gs = 0;
   seeds.forEach(sd => { relax(sd.v, sd.t, -1, 0, 0); if (sd.noWalk) noWalk[sd.v] = 1; });
   const walkOnly = !!opts.walkOnly, noRide = !!opts.noRide;
   const { adjStart, adjE, ends, len, nsStart, nsStop, snapNode, snapLen } = W;
@@ -2309,18 +2322,52 @@ function walkDijkstra(seeds, T, opts = {}) {
       const k = u - N;
       if (!noWalk[u] && snapNode[k] >= 0) relax(snapNode[k], t + snapLen[k] / WALK_SPEED, u, 2, 0);
       if (noRide) continue;
-      for (let b = bStart[k]; b < bStart[k + 1]; b++) {
-        const ti = bT[b], pos = bP[b], si = tsi[ti], of = tof[ti];
-        const base = of[pos], t0 = t + trips[ti].waitP[pos];
+      const b0 = bStart[k], b1 = bStart[k + 1];
+      if (b0 === b1) continue;
+      // 1) najkrótsza jazda do każdego dalszego przystanku
+      vs++;
+      for (let b = b0; b < b1; b++) {
+        const ti = bT[b], pos = bP[b], si = tsi[ti], of = tof[ti], base = of[pos];
+        if (trips[ti].waitP[pos] === Infinity) continue;
         for (let j = pos + 1; j < si.length; j++) {
-          const nt = t0 + (of[j] - base);
-          if (nt > T) break;
-          relax(N + si[j], nt, u, 3, ti, pos, j);
+          const d = of[j] - base, v = si[j];
+          if (t + d > T) break;
+          if (vm[v] !== vs) { vm[v] = vs; minR[v] = d; acc[v] = 0; } else if (d < minR[v]) minR[v] = d;
+        }
+      }
+      // 2) suma częstotliwości linii jadących niewiele dłużej niż najszybsza (każda linia raz)
+      let cur = -1, nt = 0;
+      for (let b = b0; b <= b1; b++) {
+        if (b === b1 || tline[bT[b]] !== cur) {
+          for (let i = 0; i < nt; i++) acc[touched[i]] += best[touched[i]];
+          nt = 0;
+          if (b === b1) break;
+          cur = tline[bT[b]]; gs++;
+        }
+        const ti = bT[b], pos = bP[b], si = tsi[ti], of = tof[ti], base = of[pos], w = trips[ti].waitP[pos];
+        if (w === Infinity) continue;
+        const f = 1 / (2 * w);
+        for (let j = pos + 1; j < si.length; j++) {
+          const d = of[j] - base, v = si[j];
+          if (t + d > T) break;
+          if (d > minR[v] + rideSlack(minR[v])) continue;
+          if (gm[v] !== gs) { gm[v] = gs; best[v] = f; touched[nt++] = v; } else if (f > best[v]) best[v] = f;
+        }
+      }
+      // 3) przejazd: czekanie na pierwszy z tych pojazdów (dla linii spoza zestawu własne) + jazda tym kursem
+      for (let b = b0; b < b1; b++) {
+        const ti = bT[b], pos = bP[b], si = tsi[ti], of = tof[ti], base = of[pos], w = trips[ti].waitP[pos];
+        if (w === Infinity) continue;
+        for (let j = pos + 1; j < si.length; j++) {
+          const d = of[j] - base, v = si[j];
+          if (t + d > T) break;
+          curWait = d <= minR[v] + rideSlack(minR[v]) && acc[v] > 0 ? Math.min(w, Math.max(1 / (2 * acc[v]), 1)) : w;
+          relax(N + v, t + curWait + d, u, 3, ti, pos, j);
         }
       }
     }
   }
-  return { time, prev, kind, via, rFrom, rTo };
+  return { time, prev, kind, via, rFrom, rTo, rWait };
 }
 
 // dojście z zaznaczonego punktu: walk1 (ulicami) + czasy dojścia do przystanków w okręgu
@@ -2531,7 +2578,7 @@ function walkLegsFrom(v0, C = iso) {
     const k = R.kind[v];
     if (k === 3) {
       flush(R.time[v]);
-      legs.unshift({ ti: R.via[v], from: R.rFrom[v], to: R.rTo[v] });
+      legs.unshift({ ti: R.via[v], from: R.rFrom[v], to: R.rTo[v], wait: R.rWait ? R.rWait[v] : null });
     } else if (k === 1) {
       const e = R.via[v];
       addWalk(edgePoints(e, W.ends[2 * e] !== u), R.time[v]);
@@ -2956,6 +3003,22 @@ function isoLegsApprox(id) {
 }
 
 // Etapy trasy, każdy w osobnym wierszu: "pieszo 3 min", "152 Rondo Mogilskie → Dąbie · 4 przyst., 7 min"
+// inne linie z tego przystanku do tego samego celu, na które też warto wsiąść (te same zasady co w walkDijkstra)
+function altLines(l) {
+  const G = tripIndex(), k = G.tsi[l.ti][l.from], kz = G.tsi[l.ti][l.to];
+  const d0 = G.tof[l.ti][l.to] - G.tof[l.ti][l.from], out = new Map();
+  const own = G.trips[l.ti].key;
+  for (let b = G.bStart[k]; b < G.bStart[k + 1]; b++) {
+    const ti = G.bT[b], pos = G.bP[b], tr = G.trips[ti];
+    if (tr.key === own || tr.waitP[pos] === Infinity) continue;
+    const j = G.tsi[ti].indexOf(kz, pos + 1);
+    if (j < 0) continue;
+    const d = G.tof[ti][j] - G.tof[ti][pos];
+    if (!out.has(tr.key) || d < out.get(tr.key)) out.set(tr.key, d);
+  }
+  const dmin = Math.min(d0, ...out.values());
+  return [...out].filter(([, d]) => d <= dmin + rideSlack(dmin)).map(([key]) => key).slice(0, 3);
+}
 function legsText(legs, C = iso) {
   const parts = [];
   const nm = id => esc(STOP_BY_ID.get(id)?.name || '');
@@ -2970,8 +3033,10 @@ function legsText(legs, C = iso) {
         + ` <span class="leg-note">· ${n} przyst., ${ride} min${l.wait >= 1 ? `, czekasz ${Math.round(l.wait)} min` : ''}</span>`);
     } else {
       const tr = isoGraph.trips[l.ti], a = tr.s[l.from], z = tr.s[l.to];
-      const ride = Math.round(z[1] - a[1]), wait = Math.round(tr.waitP ? tr.waitP[l.from] : tr.wait);
-      parts.push(`<b class="leg-line">${esc(tr.key.split('|')[0])}</b> ${nm(a[0])} → ${nm(z[0])}`
+      const ride = Math.round(z[1] - a[1]);
+      const wait = Math.round(l.wait != null ? l.wait : tr.waitP ? tr.waitP[l.from] : tr.wait);
+      const refs = [tr.key, ...altLines(l)].map(k => `<b class="leg-line">${esc(k.split('|')[0])}</b>`).join(' / ');
+      parts.push(`${refs} ${nm(a[0])} → ${nm(z[0])}`
         + ` <span class="leg-note">· ${l.to - l.from} przyst., ${ride} min${wait >= 1 ? ` + śr. ${wait} min czekania` : ''}</span>`);
     }
   });
