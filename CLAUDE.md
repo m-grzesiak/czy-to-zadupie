@@ -20,9 +20,16 @@ Funkcje:
 - **Chip zasięgu na mapie** (prawy górny róg, `renderIsoChip`, `onIsoChip`, `applyIsoT`): bez zasięgu „Zasięg N min” (włącza), z zasięgiem typ dnia / godzina wyjścia, − N min + (co 5 min, 10–60) i ✕ (wyłącza, jak Esc). Ukryty bez wybranego miejsca.
 - **Esc** kolejno: wskazywanie celu → cel → linia → zasięg.
 - **Granice mapy:** `setMaxBounds` = prostokąt wszystkich przystanków + 6% marginesu (twarda krawędź, `maxBoundsViscosity` 1). `minZoom` z `getBoundsZoom` — przy najmniejszym przybliżeniu widać cały obszar danych (desktop zoom 10, telefon 9), przeliczane na `resize`.
-- **Przycisk lokalizacji** (pod + −): `navigator.geolocation` → `selectPoint`. Błędy i „poza obszarem danych” w `#notice`.
+- **Przycisk lokalizacji** (pod + −, na telefonie prawy górny róg; też „Sprawdź, gdzie jestem” w pustym panelu, `data-locate`): `navigator.geolocation` → `selectPoint`. Błędy i „poza obszarem danych” w `#notice`.
 - **Klik w przystanek:** tablica najbliższych odjazdów na górze (8 wierszy, „Pokaż więcej” +16, do 3 h do przodu), pod nią linie; wcześniej 16 wierszy, „Pokaż więcej” do 3 h do przodu) z numerem słupka ZTP (01, 02…). Te same numery są etykietami na mapie (widoczne od zoomu 16, a poniżej tylko ta z wiersza pod kursorem).
-- **Klik lub hover na linię:** trasa ze wszystkimi przystankami, odjazdy z najbliższego przystanku, czas przejazdu po trasie.
+- **Klik lub hover na linię:** trasa ze wszystkimi przystankami. Szczegóły linii (`renderLineDetail`): nagłówek z ✕, przełącznik kierunku (`data-dir`, `pickDir` = wariant z tym headsignem, w którym przystanek jest najwcześniej), 4 najbliższe odjazdy w tym kierunku jako kafelki (`renderLdNext`; kafelek = wybrany kurs `ldKurs`), zakładki „Trasa i czasy” (`renderLdPane`: przystanki z „+N min” i godziną dla wybranego kursu, wcześniejsze zwinięte) i „Rozkład” (`renderLdTimetable`: dni + tabela w wybranym kierunku, dziś wcześniejsze godziny zwinięte, kursy skrócone z „°”). Odjazdy: `lineDepsFor` (deps/ po headsignie, pamięć `ldCache`), kierunek kursu skróconego z `depDir`.
+- **Werdykt „Czy to zadupie?”** (`renderPlaceHead` w `#place-head`, nad promieniem; woła go `renderPlaceCard`): poziom 0–3 (`verdictLevel`) z `placeStats.perHour` (≥30 / ≥10 / ≥3 kursów na godzinę) obniżany przez dojście do najbliższego przystanku (>10 / >15 / >25 min), skala „zadupie · da się żyć · dobrze · pępek świata” i trzy kafelki (kursy na godzinę, minuty pieszo albo w przystanku najczęstsza linia, liczba linii + nocne). Liczony z przystanków w okręgu, więc zależy od promienia.
+- **Telefon (do 760 px):** mapa na cały ekran, panel jako arkusz od dołu (CSS w `@media (max-width: 760px)`, JS: `updateSheet`, `setSheet`, `sheetPx`, `viewBounds`, `fitPad`, `panToVisible`, `revealFocus`):
+  - bez miejsca karta startowa (`#app.st-empty`: tytuł nad mapą, „Sprawdź, gdzie jestem”, przykłady),
+  - po stuknięciu niski arkusz `#layout.sheet-peek` (werdykt, kafelki, promień jako 4 przyciski `.rseg`), uchwyt / przesunięcie palcem → `sheet-full`; zakładki `.ptabs` / `.tabp` (punkt: Dojazdy, Linie, Przystanki; przystanek: Odjazdy, Linie, Dojazdy; na komputerze ukryte, wszystko pod sobą),
+  - wybrana linia: `#panel.line-open` (sam `#line-detail`), zasięg: `#panel.iso-open` (niski arkusz z `#iso-box` i `#target-box`; dymek celu ukryty, cel pokazuje karta),
+  - przycisk `#m-back` w lewym górnym rogu: × zamyka miejsce (`closePlace`), z linii / zasięgu „← Okolica”; lokalizacja i chip zasięgu w prawym górnym rogu, przyciski + − ukryte,
+  - `--sheet-h` (ResizeObserver) podnosi legendę i atrybucję nad arkusz; dopasowania widoku (trasa, zasięg, cel, powrót) liczą widoczną część mapy bez arkusza.
 - **Mapa zasięgu „Gdzie dojadę w N min”**, z przystanku albo z punktu (z punktu: jeden Dijkstra od najbliższej ulicy, chodzenie bez limitu okręgu):
   - obszar wzdłuż osiągalnych ulic,
   - hover na przystanek lub dowolne miejsce pokazuje czas i trasę (przejazdy + kropkowane przejścia),
@@ -126,6 +133,8 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
 - **Leaflet throttluje `mousemove` na canvasie (32 ms).** W testach Playwright ruszaj myszą w krokach (`steps`), inaczej hover się nie odpali.
 - **Kliknięcie w kontrolkę, która przerysowuje się w trakcie kliknięcia** (chip zasięgu, przycisk w dymku): Leaflet szuka `_leaflet_disable_click` od `e.target` w górę, a odłączony od DOM przycisk go nie ma, więc mapa dostaje `click` i ustawia cel. W takich kontrolkach wołaj `L.DomEvent.stopPropagation(e)` w nasłuchu na samej kontrolce.
 - **Playwright `page.route`** podaje handlerowi `(route, request)`, więc nie używaj drugiego parametru jako własnej flagi.
+- **`position` kontenera mapy:** Leaflet dopisuje `position:relative` tylko przy starcie, jeśli CSS nie ustawia innej. Na telefonie `#map` jest `absolute`, więc `#map` ma w CSS `position:relative` na stałe — inaczej po obrocie telefonu kontrolki i warstwy uciekały poza mapę.
+- **Arkusz w stanie „peek” ma `overflow:hidden`**: na niskich ekranach zakładki są poniżej krawędzi, dostęp przez uchwyt / przesunięcie w górę. W testach dotykowych nie stukaj w legendę ani atrybucję (są nad arkuszem).
 
 ## Jak testować
 
@@ -142,7 +151,9 @@ Sprawdzaj:
 - pokrycie wariantów: każda para linia–przystanek z `stops[].lines` jest w którymś `routes[].trips`,
 - klik w punkt: `selectPoint` < 80 ms synchronicznie, karta celów gotowa ok. 80 ms później; Rynek Główny: 13 linii dziennych + 11 nocnych, Lotnisko ok. 40 min,
 - klik w mapę przy włączonym zasięgu ustawia cel z dymkiem i zostawia zasięg; „Sprawdź to miejsce” przenosi start (`#p=` = cel, bez `cel=`, `iso=` zostaje), „Wróć do” przywraca poprzedni; Esc dwa razy = brak celu i zasięgu,
-- chip: − / + zmienia `iso=` w adresie i suwak w panelu, a klik w chip nie ustawia celu (Kurdwanów → Płaszów Estakada ok. 24 min z linią 7).
+- chip: − / + zmienia `iso=` w adresie i suwak w panelu, a klik w chip nie ustawia celu (Kurdwanów → Dworzec Płaszów Estakada ok. 23–24 min z linią 7),
+- linia 1 z Ronda Mogilskiego: dwa kierunki w przełączniku, w zakładce „Rozkład” po 124 odjazdy w dzień roboczy w każdym kierunku,
+- telefon (viewport 390×844 i 360×640, `is_mobile`, `has_touch`): karta startowa → stuknięcie w mapę = `sheetMode` „peek” i pinezka nad arkuszem; przesunięcie w górę / w dół (sztuczne `TouchEvent` na `#panel`) = „full” / „peek”; linia z tablicy odjazdów = „line-peek”; `#m-back` dwa razy = karta startowa i pusty adres; zmiana szerokości na > 760 px nie rozjeżdża mapy.
 
 ## Konwencje
 

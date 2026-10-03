@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Czy to zadupie? — dojazdy komunikacją w Krakowie</title>
 <meta name="description" content="Kliknij miejsce w Krakowie i okolicy, a zobaczysz, jak stąd dojedziesz tramwajem i autobusem: linie w pobliżu, co ile jeżdżą, czasy dojazdu i mapę zasięgu.">
 <meta property="og:title" content="Czy to zadupie?">
@@ -62,6 +62,7 @@
   #map{
     flex:1;
     min-width:0;
+    position:relative;   /* Leaflet ustawia to sam tylko przy starcie; po obrocie telefonu układ się zmienia */
   }
   #panel{
     width:390px;
@@ -575,65 +576,251 @@
   }
   .tb-actions .chip{ margin:0; }
   .near-list .stop-item{ cursor:pointer; }
-  /* --- panel na telefonie: przycisk rozwijania --- */
+  /* --- werdykt i kafelki: nagłówek miejsca (#place-head, renderPlaceHead) --- */
+  #place-head:empty{ display:none; }
+  #place-head{ margin:0 0 16px; }
+  .ph-where{ font-size:12.5px; color:var(--ink-soft); line-height:1.35; }
+  .ph-where b{ color:var(--ink); font-weight:600; }
+  .ph-verdict{ font-size:21px; font-weight:800; letter-spacing:-.02em; line-height:1.15; margin:2px 0 8px; }
+  .ph-verdict.wait{ color:var(--ink-soft); font-weight:600; font-size:16px; }
+  .ph-meter{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px; }
+  .ph-meter i{ height:6px; border-radius:3px; background:var(--line); }
+  .ph-meter i.on{ background:var(--accent); }
+  .ph-scale{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-soft); margin-top:4px; }
+  .ph-scale span.on{ color:var(--ink); font-weight:700; }
+  .ph-tiles{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin-top:12px; }
+  .ph-t{ background:var(--paper); border-radius:10px; padding:8px 10px 9px; min-width:0; }
+  .ph-t b{ display:block; font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ph-t span{ display:block; font-size:11.5px; color:var(--ink-soft); line-height:1.25; margin-top:1px; }
+  /* elementy tylko dla telefonu */
+  .rseg, .rseg-l, .ptabs, .m-back, .es-mob, .iso-tip{ display:none; }
+  /* --- pusty panel --- */
+  .empty-state .es-lead{ margin:0 0 10px; }
+  .es-locate{
+    font:inherit; font-size:13px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    padding:7px 12px; border-radius:9px; border:1px solid var(--line); background:var(--paper-raised); color:var(--ink); cursor:pointer;
+  }
+  .es-locate:hover{ border-color:color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .es-locate:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .es-locate.busy svg{ animation:loc-spin 1s linear infinite; }
+  .es-ex{ margin-top:12px; }
+  /* --- wybrana linia: nagłówek, kierunek, najbliższe odjazdy, zakładki --- */
+  .ld-num{
+    display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; min-width:42px; height:34px; padding:0 8px;
+    border-radius:8px; font-weight:800; font-size:17px; color:#fff; font-variant-numeric:tabular-nums;
+  }
+  .ld-num.tram{ background:var(--tram); }
+  .ld-num.bus{ background:var(--bus); }
+  .ld-ttl{ flex:1; min-width:0; }
+  .ld-kind{ font-size:12px; color:var(--ink-soft); }
+  .ld-close{
+    flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:1px solid var(--line); background:var(--paper-raised);
+    font:inherit; font-size:15px; line-height:1; color:var(--ink); cursor:pointer;
+  }
+  .ld-close:hover{ border-color:var(--ink-soft); }
+  .ld-close:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .dseg{ display:flex; flex-wrap:wrap; gap:3px; margin:12px 0 0; padding:3px; border-radius:11px; background:#ece7db; }
+  .dseg button{
+    flex:1 1 0; min-width:0; font:inherit; font-size:12.5px; padding:7px 8px; border:0; border-radius:8px; cursor:pointer;
+    background:transparent; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .dseg button.on{ background:var(--paper-raised); color:var(--ink); font-weight:700; box-shadow:0 1px 4px rgba(28,28,26,.14); }
+  .dseg button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .ld-vars{ margin:8px 0 0; }
+  .ld-vars .chip{ font-size:11.5px; }
+  .ld-from{ margin:12px 0 6px; }
+  .ld-next{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:6px; }
+  .ld-nt{
+    font:inherit; color:var(--ink); border:1px solid var(--line); background:var(--paper-raised); border-radius:10px;
+    padding:6px 3px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; min-width:0;
+  }
+  .ld-nt b{ font-size:15px; font-variant-numeric:tabular-nums; }
+  .ld-nt small{ font-size:11.5px; color:var(--ink-soft); white-space:nowrap; }
+  .ld-nt em{ font-style:normal; font-size:10.5px; color:var(--ink-soft); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ld-nt:hover{ border-color:color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .ld-nt.on{ border-color:var(--accent); background:#fbf3e6; box-shadow:inset 0 0 0 1px var(--accent); }
+  .ld-nt.on small{ color:#7a4f12; font-weight:600; }
+  .ld-nt:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .ld-tabs{ display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--line); margin:14px 0 10px; }
+  .ld-tabs button{ font:inherit; font-size:13px; padding:8px 4px; border:0; background:none; color:var(--ink-soft); cursor:pointer; }
+  .ld-tabs button.on{ color:var(--ink); font-weight:700; box-shadow:inset 0 -3px 0 var(--accent); }
+  .ld-tabs button:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+  .ld-more{
+    font:inherit; font-size:12px; color:var(--ink-soft); background:none; border:0; padding:2px 0 8px; cursor:pointer;
+    display:flex; gap:6px; align-items:center; text-align:left;
+  }
+  .ld-more:hover{ color:var(--ink); }
+  .ld-more:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .tl li span .clk{ display:inline-block; min-width:40px; margin-left:8px; text-align:right; font-weight:700; color:var(--ink); }
+  .ld-next .muted{ grid-column:1 / -1; }
+  .tl li > div{ min-width:0; }
+  .tl li.here .here-tag{ font-style:normal; font-size:10.5px; font-weight:700; color:#7a4f12; background:#fbf3e6; border-radius:5px; padding:1px 5px; margin-left:6px; }
+  .tt .nx{ background:#fbf3e6; box-shadow:inset 0 0 0 1.5px var(--accent); border-radius:4px; font-weight:700; text-align:center; }
+  .tt .alt{ color:var(--ink-soft); }
+  .tt-note{ margin-top:6px; }
+  /* --- telefon: mapa na cały ekran, panel jako arkusz wysuwany od dołu --- */
   .panel-toggle{ display:none; }
   @media (max-width: 760px){
-    header{ padding:10px 14px; }
+    html, body{ overflow:hidden; overscroll-behavior:none; }
+    #app{ height:100%; height:100dvh; }
+    header{
+      position:absolute; z-index:1001; top:calc(12px + env(safe-area-inset-top)); left:12px; display:none;
+      padding:11px 15px; border:0; border-radius:14px; box-shadow:0 2px 10px rgba(28,28,26,.16);
+    }
     header p{ display:none; }
-    #panel{ padding:0 14px 16px; }
-    #layout{ flex-direction:column; }
-    #map{ min-height:0; }
+    #app.st-empty header{ display:flex; }
+    #layout{ display:block; flex:1; }
+    #map{ position:absolute; inset:0; }
+    .leaflet-control-zoom{ display:none; }
+    .leaflet-top{ top:env(safe-area-inset-top); }
+    .leaflet-top.leaflet-right .leaflet-control{ margin-top:12px; margin-right:12px; }
+    /* atrybucja i legenda zawsze nad arkuszem (--sheet-h ustawia JS) */
+    .leaflet-bottom{ bottom:var(--sheet-h, 0px); transition:bottom .25s ease; }
+    #layout.sheet-full .leaflet-bottom{ display:none; }
+    .locate-ctl.leaflet-bar{ border:0; border-radius:22px; box-shadow:0 2px 10px rgba(28,28,26,.18); overflow:hidden; }
+    .locate-ctl a{ width:44px; height:44px; border-radius:22px; }
+    .iso-chip button{ height:38px; min-width:38px; }
+    .iso-chip .ic-step, .iso-chip .ic-x{ width:38px; }
+    .loading-pill{ top:calc(70px + env(safe-area-inset-top)); }
+    .m-back{
+      display:flex; position:absolute; z-index:1001; top:calc(12px + env(safe-area-inset-top)); left:12px;
+      height:44px; min-width:44px; padding:0 16px 0 12px; align-items:center; justify-content:center; gap:6px;
+      border:0; border-radius:22px; background:var(--paper-raised); box-shadow:0 2px 10px rgba(28,28,26,.16);
+      font:inherit; font-size:14px; font-weight:650; color:var(--ink); cursor:pointer;
+    }
+    .m-back.x{ padding:0; width:44px; }
+    .m-back[hidden]{ display:none; }
+    .m-back:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
     #panel{
-      width:auto;
-      border-left:none;
-      border-top:1px solid var(--line);
-      max-height:48%;
-      transition:max-height .2s ease;
+      position:absolute; left:0; right:0; bottom:0; z-index:1000; width:auto; height:46%;
+      border:0; border-radius:22px 22px 0 0; box-shadow:0 -6px 28px rgba(28,28,26,.18);
+      padding:0 18px calc(18px + env(safe-area-inset-bottom)); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:auto;
+      transition:height .25s ease;
     }
-    #layout.expanded #panel{ max-height:82%; }
+    #layout.sheet-full #panel{ height:calc(100% - 68px - env(safe-area-inset-top)); }
+    #layout.sheet-peek #panel{ overflow-y:hidden; }
+    #panel.iso-open{ height:auto; max-height:62%; overflow-y:auto !important; }
+    /* karta startowa: sama mapa i zachęta na dole */
+    #app.st-empty #panel{
+      left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); height:auto; max-height:75%;
+      border-radius:22px; padding:18px 18px 16px; box-shadow:0 6px 28px rgba(28,28,26,.2);
+    }
+    #app.st-empty .panel-toggle, #app.st-empty .radius-row, #app.st-empty .data-info{ display:none; }
+    #app.st-empty #panel h2{ font-size:18px; margin-bottom:6px; }
     .panel-toggle{
-      display:flex; justify-content:center; align-items:center; gap:6px; width:calc(100% + 28px); margin:0 -14px 10px;
-      position:sticky; top:0; z-index:5; padding:7px 0 6px; border:0; border-bottom:1px solid var(--line);
-      background:var(--paper-raised); color:var(--ink-soft); font:inherit; font-size:12px; cursor:pointer;
+      display:flex; justify-content:center; align-items:center; position:sticky; top:0; z-index:5;
+      width:calc(100% + 36px); margin:0 -18px 6px; height:26px; padding:0; border:0; background:var(--paper-raised); cursor:pointer;
     }
-    .panel-toggle::before{ content:""; width:34px; height:4px; border-radius:2px; background:var(--line); }
-    .badge{ height:30px; }
-    .dest{ padding:9px 4px; }
+    .panel-toggle::before{ content:""; width:38px; height:5px; border-radius:3px; background:#d9d4c7; }
+    .route-note{ display:none; }
+    #panel h2{ font-size:17px; }
+    /* miejsce: werdykt zastępuje tytuł „13 linii w pobliżu” */
+    #panel.has-head:not(.stop-mode) #panel-title, #panel.has-head:not(.stop-mode) #panel-sub{ display:none; }
+    .ph-verdict{ font-size:24px; }
+    #place-head{ margin-bottom:14px; }
+    /* promień: cztery przyciski zamiast suwaka */
+    .radius-row{ flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+    .radius-row label, .radius-row input[type=range], .radius-val{ display:none; }
+    .rseg-l{ display:block; width:100%; font-size:13px; font-weight:600; color:var(--ink-soft); }
+    .rseg{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px; width:100%; background:#ece7db; border-radius:12px; padding:4px; }
+    .rseg button{ font:inherit; font-size:14px; height:38px; border:0; border-radius:9px; background:transparent; color:var(--ink-soft); cursor:pointer; }
+    .rseg button.on{ background:var(--paper-raised); color:var(--ink); font-weight:700; box-shadow:0 1px 4px rgba(28,28,26,.14); }
+    .rseg button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+    /* zakładki panelu */
+    .ptabs{
+      display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0, 1fr); margin:2px -18px 12px; padding:0 8px;
+      border-bottom:1px solid var(--line); position:sticky; top:26px; z-index:4; background:var(--paper-raised);
+    }
+    .ptabs button{ font:inherit; font-size:14.5px; height:44px; border:0; background:none; color:var(--ink-soft); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ptabs button.on{ color:var(--ink); font-weight:700; box-shadow:inset 0 -3px 0 var(--accent); }
+    .ptabs button:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+    #results.tabbed .tabp:not(.on){ display:none; }
+    .tabp > .ld-sec:first-child, .tabp > .group-label:first-child, .tabp > .stop-list:first-child{ margin-top:0; }
+    .tabp > .stop-list:first-child{ border-top:0; padding-top:0; }
+    /* wybrana linia: cały arkusz dla niej */
+    #panel.line-open > :not(#results):not(.panel-toggle):not(.notice):not(.sr-only){ display:none !important; }
+    #panel.line-open #results > :not(.tabp){ display:none; }
+    #panel.line-open #results .tabp{ display:none; }
+    #panel.line-open #results .tabp:has(#line-detail){ display:block !important; }
+    #panel.line-open .tabp:has(#line-detail) > :not(#line-detail){ display:none; }
+    #panel.line-open #line-detail{ margin:0; border:0; padding:0; background:none; }
+    /* zasięg (i cel w zasięgu): niski arkusz z samymi ustawieniami */
+    #panel.iso-open > :not(#results):not(.panel-toggle):not(.notice):not(.sr-only){ display:none !important; }
+    #panel.iso-open #results > :not(.tabp):not(#iso-box):not(#target-box){ display:none; }
+    #panel.iso-open #results .tabp{ display:none; }
+    #panel.iso-open #results .tabp:has(#iso-box){ display:block !important; }
+    #panel.iso-open .tabp:has(#iso-box) > :not(#iso-box):not(#target-box){ display:none; }
+    #panel.iso-open #iso-box{ margin-top:0; }
+    #panel.iso-open .iso-card{ border:0; padding:0; background:none; }
+    .iso-hint, .iso-card > .muted:last-child{ display:none; }
+    .iso-tip{ display:block; font-size:12.5px; color:var(--ink-soft); margin-top:8px; }
+    /* na telefonie cel pokazuje karta w arkuszu, nie dymek na mapie */
+    .target-pop{ display:none; }
+    .tb-actions .link-btn[data-target-origin]{
+      text-decoration:none; background:var(--ink); color:#fff; font-weight:650; font-size:14px; padding:10px 14px; border-radius:11px;
+    }
+    .badge{ height:32px; }
+    .dest{ padding:10px 4px; }
+    .dep-row{ padding:9px 4px; }
+    .tl li{ padding-top:7px; padding-bottom:7px; font-size:13.5px; }
+    .ld-nt{ padding:9px 3px; }
+    .ld-nt b{ font-size:17px; }
+    .dseg button{ font-size:13.5px; padding:9px 8px; }
+    .ld-tabs button{ font-size:14px; padding:10px 4px; }
+    .es-desk{ display:none; }
+    .es-mob{ display:inline; }
+    .es-locate{ display:flex; width:100%; height:46px; font-size:15px; border-radius:13px; }
+    .examples .chip{ padding:9px 14px; font-size:14px; }
+    .chip{ padding:6px 11px; font-size:13px; }
   }
 </style>
 </head>
 <body>
-<div id="app">
+<div id="app" class="st-empty">
   <header>
     <h1>Czy to zadupie?</h1>
     <p>Kliknij miejsce na mapie — sprawdzisz, jak stąd dojedziesz komunikacją miejską w Krakowie: linie w pobliżu, czasy dojazdu i mapę zasięgu.</p>
   </header>
   <div id="layout">
     <div id="map"></div>
+    <!-- telefon: przycisk w lewym górnym rogu mapy (× zamyka miejsce, „← Okolica” wraca z linii / zasięgu) -->
+    <button type="button" class="m-back" id="m-back" hidden></button>
     <div class="loading-pill" id="loading"><i></i><span>Wczytuję rozkład…</span></div>
     <div id="panel">
-      <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false">Więcej</button>
+      <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false" aria-label="Rozwiń panel"></button>
       <button type="button" class="back-place" id="back-place" hidden></button>
       <h2 id="panel-title">Wybierz miejsce na mapie</h2>
       <p class="sub" id="panel-sub"></p>
       <div class="notice" id="notice" hidden></div>
       <div class="sr-only" id="sr-status" aria-live="polite" aria-atomic="true"></div>
 
+      <div id="place-head"></div>
+
       <div class="radius-row">
         <label for="radius">Promień</label>
         <input type="range" id="radius" min="200" max="2000" step="100" value="500">
         <span class="radius-val" id="radius-val">500 m</span>
+        <span class="rseg-l">Linie w promieniu</span>
+        <div class="rseg" role="group" aria-label="Promień">
+          <button type="button" data-r="300">300 m</button><button type="button" data-r="500" class="on">500 m</button><button type="button" data-r="1000">1 km</button><button type="button" data-r="2000">2 km</button>
+        </div>
       </div>
 
       <div id="results">
-        <div class="empty-state">Kliknij dowolne miejsce albo przystanek. Możesz też zacząć od przykładu:
+        <div class="empty-state">
+          <p class="es-lead"><span class="es-desk">Kliknij dowolne miejsce albo przystanek</span><span class="es-mob">Pokażę, jak stamtąd dojedziesz tramwajem i autobusem — i czy to zadupie</span>.</p>
+          <button type="button" class="es-locate" data-locate="1">
+            <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="9" r="5.2"/><circle cx="9" cy="9" r="1.8" fill="currentColor" stroke="none"/><path d="M9 1v2.6M9 14.4V17M1 9h2.6M14.4 9H17" stroke-linecap="round"/></svg>
+            Sprawdź, gdzie jestem</button>
+          <div class="es-ex">albo zacznij od przykładu:</div>
           <div class="examples">
             <button type="button" class="chip" data-example="50.06170,19.93730">Rynek Główny</button>
             <button type="button" class="chip" data-example="50.01230,19.95750">Kurdwanów</button>
             <button type="button" class="chip" data-example="50.08230,19.89270">Bronowice</button>
             <button type="button" class="chip" data-example="50.07180,20.03760">Nowa Huta</button>
           </div>
-          Przycisk lokalizacji pod „+ −” pokaże okolicę, w której jesteś.</div>
+        </div>
       </div>
       <div class="route-note" id="route-status"></div>
 
@@ -709,6 +896,95 @@ const routeStatus = document.getElementById('route-status');
 const noticeEl = document.getElementById('notice');
 const srStatus = document.getElementById('sr-status');
 const EMPTY_HTML = document.getElementById('results').innerHTML;
+
+// ---------------------------------------------------------------------------
+// Telefon (do 760 px): mapa na cały ekran, panel jako arkusz wysuwany od dołu.
+// Stany: karta startowa (bez miejsca, #app.st-empty), niski arkusz „peek” i rozwinięty „full”
+// (#layout.sheet-peek / .sheet-full), wybrana linia (#panel.line-open) i zasięg (#panel.iso-open,
+// niski arkusz z samymi ustawieniami). Na komputerze klasy nic nie zmieniają.
+// ---------------------------------------------------------------------------
+const MQ_MOBILE = window.matchMedia('(max-width: 760px)');
+const isMobile = () => MQ_MOBILE.matches;
+const panelEl = document.getElementById('panel'), layoutEl = document.getElementById('layout'), appEl = document.getElementById('app');
+let sheetState = 'peek', sheetMode = null, revealTimer = 0;
+const ICON_X = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const ICON_BACK = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function setSheet(st) {
+  if (st === 'peek') panelEl.scrollTop = 0;
+  sheetState = st;
+  updateSheet();
+}
+function updateSheet() {
+  const empty = !stopMode && !radiusCircle;
+  const lineOpen = !empty && !!selectedRouteKey;
+  const isoOpen = !empty && !lineOpen && !!iso;
+  appEl.classList.toggle('st-empty', empty);
+  panelEl.classList.toggle('line-open', lineOpen);
+  panelEl.classList.toggle('iso-open', isoOpen);
+  layoutEl.classList.toggle('sheet-peek', !empty && !isoOpen && sheetState === 'peek');
+  layoutEl.classList.toggle('sheet-full', !empty && !isoOpen && sheetState === 'full');
+  const tog = document.getElementById('panel-toggle');
+  tog.setAttribute('aria-expanded', String(sheetState === 'full'));
+  tog.setAttribute('aria-label', sheetState === 'full' ? 'Zwiń panel' : 'Rozwiń panel');
+  // lewy górny róg mapy: × zamyka miejsce, z linii / zasięgu „← Okolica” (albo „← Przystanek”) wraca
+  const back = document.getElementById('m-back');
+  const toPlace = lineOpen || isoOpen;
+  back.hidden = empty;
+  back.classList.toggle('x', !toPlace);
+  back.innerHTML = toPlace ? `${ICON_BACK}${stopMode ? 'Przystanek' : 'Okolica'}` : ICON_X;
+  back.setAttribute('aria-label', lineOpen ? 'Zamknij linię' : isoOpen ? 'Wyłącz zasięg' : 'Zamknij to miejsce');
+  const mode = empty ? 'card' : isoOpen ? 'iso' : (lineOpen ? 'line-' : '') + sheetState;
+  if (mode !== sheetMode) {
+    const first = sheetMode === null;
+    sheetMode = mode;
+    // po zmianie wysokości arkusza: miejsce, trasa albo zasięg mają być w widocznej części mapy
+    if (!first && isMobile()) { clearTimeout(revealTimer); revealTimer = setTimeout(revealFocus, 280); }
+  }
+}
+// ile pikseli mapy od dołu zasłania arkusz (na komputerze 0)
+function sheetPx() {
+  if (!isMobile()) return 0;
+  const a = layoutEl.getBoundingClientRect(), p = panelEl.getBoundingClientRect();
+  return Math.max(0, Math.round(a.bottom - p.top));
+}
+const topUi = () => isMobile() ? 64 : 0;   // przyciski na górze mapy
+function setSheetVar() { layoutEl.style.setProperty('--sheet-h', sheetPx() + 'px'); }
+// widoczna część mapy (bez arkusza i górnych przycisków), zmniejszona o ułamek `shrink` z każdej strony
+function viewBounds(shrink = 0) {
+  const s = map.getSize(), top = topUi(), h = Math.max(40, s.y - top - sheetPx());
+  return L.latLngBounds(map.containerPointToLatLng([s.x * shrink, top + h * shrink]),
+    map.containerPointToLatLng([s.x * (1 - shrink), top + h * (1 - shrink)]));
+}
+// opcje fitBounds z marginesem na arkusz i przyciski
+function fitPad(pad) { return { paddingTopLeft: [pad, pad + topUi()], paddingBottomRight: [pad, pad + sheetPx()] }; }
+// przesuń mapę tak, żeby punkt był na środku widocznej części
+function panToVisible(ll, animate = true) {
+  const s = map.getSize(), top = topUi(), h = Math.max(40, s.y - top - sheetPx());
+  const want = L.point(s.x / 2, top + h / 2);
+  map.panBy(map.latLngToContainerPoint(ll).subtract(want), { animate });
+}
+function revealFocus() {
+  if (!map || !isMobile()) return;
+  setSheetVar();
+  if (selectedRouteKey) { fitRouteView(); return; }
+  if (iso) { fitIsoView(); return; }
+  if (target) {
+    const o = isoOrigin(), b = L.latLngBounds([[target.lat, target.lon]].concat(o ? [[o.lat, o.lon]] : []));
+    if (!viewBounds(0.05).contains(b)) map.fitBounds(b, { ...fitPad(50), maxZoom: map.getZoom() });
+    return;
+  }
+  const o = isoOrigin();
+  if (o && !viewBounds(0.12).contains([o.lat, o.lon])) panToVisible(L.latLng(o.lat, o.lon));
+}
+// zamknięcie miejsca (× na telefonie): z powrotem sama mapa
+function closePlace() {
+  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  setPicking(false);
+  target = null; targetPopOn = false;
+  renderTargetBox();
+  showEmpty();
+  syncURL(true);
+}
 
 // komunikat nad wynikami (np. błąd lokalizacji); pusty tekst chowa
 function showNotice(text) { noticeEl.hidden = !text; noticeEl.textContent = text || ''; }
@@ -882,6 +1158,9 @@ function selectRoute(key) {
   const wasSel = !!selectedRouteKey;
   selectedRouteKey = key;
   selectedVariant = defaultVariant(key);
+  ldKurs = null; ldBefore = false; ldEarly = false;
+  sheetState = 'peek';
+  panelEl.scrollTop = 0;
   if (!wasSel) restyleStops();   // pozostałe przystanki przygaszone od razu, nie dopiero po zoomie
   drawRoute(key);
   updateBadgeSelection();
@@ -908,8 +1187,13 @@ function drawRoute(key) {
     + (route.name ? `: ${route.name}` : '')
     + (route.shapes.length > 1 ? ` — ${route.shapes.length} warianty/kierunki.` : '.');
 
-  // Widok: fragment trasy w okolicy wybranego miejsca (do 3 km), a nie cała linia przez pół miasta.
-  // Mapę tylko oddalamy/przesuwamy, nigdy nie przybliżamy.
+  fitRouteView();
+}
+// Widok: fragment trasy w okolicy wybranego miejsca (do 3 km), a nie cała linia przez pół miasta.
+// Mapę tylko oddalamy/przesuwamy, nigdy nie przybliżamy. Na telefonie z marginesem na arkusz.
+function fitRouteView() {
+  const route = ROUTES[selectedRouteKey];
+  if (!route || !route.shapes || !route.shapes.length) return;
   const allPts = route.shapes.flat();
   const c = stopMode ? L.latLng(stopMode.lat, stopMode.lon) : radiusCircle ? radiusCircle.getLatLng() : null;
   let pts = allPts;
@@ -918,7 +1202,7 @@ function drawRoute(key) {
     if (near.length > 1) pts = near.concat([[c.lat, c.lng]]);
   }
   const bounds = L.latLngBounds(pts);
-  if (bounds.isValid() && !map.getBounds().contains(bounds)) map.fitBounds(bounds, { padding: [30, 30], maxZoom: map.getZoom() });
+  if (bounds.isValid() && !viewBounds().contains(bounds)) map.fitBounds(bounds, { ...fitPad(30), maxZoom: map.getZoom() });
 }
 
 function updateBadgeSelection() {
@@ -928,6 +1212,24 @@ function updateBadgeSelection() {
 }
 
 document.getElementById('results').addEventListener('click', (e) => {
+  const loc = e.target.closest('[data-locate]');
+  if (loc) { locateMe(loc); return; }
+  const tb = e.target.closest('[data-ptab]');
+  if (tb) { pickTab(tb.dataset.ptab); return; }
+  if (e.target.closest('[data-line-close]')) { if (selectedRouteKey) selectRoute(selectedRouteKey); return; }
+  const dirB = e.target.closest('[data-dir]');
+  if (dirB) { pickDir(dirB.dataset.dir); return; }
+  const ldt = e.target.closest('[data-ldtab]');
+  if (ldt) { setLdTab(ldt.dataset.ldtab); return; }
+  const kb = e.target.closest('[data-kurs]');
+  if (kb) {
+    ldKurs = +kb.dataset.kurs;
+    document.querySelectorAll('.ld-nt').forEach(b => { const on = b === kb; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    if (ldTab !== 'trasa') setLdTab('trasa'); else renderLdPane(detailToken);
+    return;
+  }
+  if (e.target.closest('[data-ld-before]')) { ldBefore = true; renderLdPane(detailToken); return; }
+  if (e.target.closest('[data-ld-early]')) { ldEarly = true; renderLdPane(detailToken); return; }
   const ex = e.target.closest('[data-example]');
   if (ex) { const [la, lo] = ex.dataset.example.split(',').map(Number); const ll = L.latLng(la, lo); selectPoint(ll); map.setView(ll, 15); return; }
   const del = e.target.closest('[data-place-del]');
@@ -977,9 +1279,9 @@ document.getElementById('results').addEventListener('click', (e) => {
     return;
   }
   const day = e.target.closest('[data-day]');
-  if (day) { selectedDay = day.dataset.day; renderLineDetail(); return; }
+  if (day) { selectedDay = day.dataset.day; ldEarly = false; renderLdPane(detailToken); return; }
   const v = e.target.closest('[data-variant]');
-  if (v) { selectedVariant = +v.dataset.variant; styleVariants(); renderLineDetail(); return; }
+  if (v) { selectedVariant = +v.dataset.variant; ldBefore = false; styleVariants(); renderLineDetail(); return; }
   const badge = e.target.closest('.badges .badge');
   if (!badge) return;
   selectRoute(badge.dataset.key);
@@ -1029,8 +1331,7 @@ document.getElementById('results').addEventListener('keydown', (e) => {
   if (e.target.id === 'place-name' && e.key === 'Escape') { e.stopPropagation(); renderTargetBox(false); return; }
   if (e.key !== 'Enter' && e.key !== ' ') return;
   if (e.target.matches('.badges .badge')) { e.preventDefault(); selectRoute(e.target.dataset.key); }
-  else if (e.target.matches('[data-stop-id], [data-line], [data-dest]')) { e.preventDefault(); e.target.click(); }
-});
+  else if (e.target.matches('[data-stop-id], [data-line], [data-dest]')) { e.preventDefault(); e.target.click(); }});
 document.getElementById('results').addEventListener('change', (e) => {
   if (e.target.id === 'day-type') setDayType(e.target.value);
 });
@@ -1163,138 +1464,254 @@ function profileFor(iso) {
   return d ? { p: cal[d], approx: d } : null;
 }
 
-let detailToken = 0;
-async function renderLineDetail() {
+let detailToken = 0, ttToken = 0;
+// stan widoku linii: zakładka, wybrany kurs (minuty od północy, do godzin na trasie),
+// rozwinięte wcześniejsze przystanki i wcześniejsze godziny rozkładu
+let ldTab = 'trasa', ldKurs = null, ldBefore = false, ldEarly = false;
+const ldCache = new Map();
+// odjazdy linii z przystanku (wszystkie jego słupki) w danym dniu, pogrupowane po kierunku z rozkładu (headsign)
+async function lineDepsFor(np, key, day) {
+  const ck = `${key}|${np.poles.map(p => p.id).join(',')}|${day}`;
+  if (ldCache.has(ck)) return ldCache.get(ck);
+  const data = await Promise.all([...new Set(np.poles.map(cellOf))].map(loadCell));
+  const prof = profileFor(day);
+  let res = null;
+  if (prof) {
+    const byH = new Map();
+    np.poles.forEach(s => data.forEach(cell => (cell[s.id]?.[key] || []).forEach(e => {
+      if (!byH.has(e.h)) byH.set(e.h, new Set());
+      (e.t[e.p[prof.p]] || []).forEach(m => byH.get(e.h).add(m));
+    })));
+    res = { prof, byH: new Map([...byH].map(([h, set]) => [h, [...set].sort((a, b) => a - b)]).filter(([, m]) => m.length)) };
+  }
+  if (ldCache.size > 300) ldCache.clear();
+  ldCache.set(ck, res);
+  return res;
+}
+// Kierunek (headsign wariantu) dla odjazdów z danym headsignem. Kursy skrócone (np. „Łagiewniki”)
+// trafiają do kierunku, w którym taki przystanek jest dalej na trasie.
+function depDir(route, h, hereName) {
+  const trips = (route.trips || []).filter(Boolean);
+  if (trips.some(t => t.h === h)) return h;
+  for (const t of trips) {
+    const names = t.s.map(([id]) => STOP_BY_ID.get(id)?.name);
+    const i = hereName ? names.indexOf(hereName) : 0;
+    const j = names.lastIndexOf(h);
+    if (i >= 0 && j > i) return t.h;
+  }
+  return null;
+}
+// odjazdy w wybranym kierunku: [{m, h}] po kolei
+function dirDeps(route, byH, dir, hereName) {
+  const out = [];
+  let mapped = false;
+  byH.forEach((mins, h) => {
+    const d = depDir(route, h, hereName);
+    if (d) mapped = true;
+    if (d === dir) mins.forEach(m => out.push({ m, h }));
+  });
+  if (!mapped) byH.forEach((mins, h) => mins.forEach(m => out.push({ m, h })));   // nie da się przypisać: wszystkie
+  return out.sort((a, b) => a.m - b.m);
+}
+// kierunek = wariant z tym headsignem, w którym wybrany przystanek jest najwcześniej (jedziemy „stąd”)
+function pickDir(h) {
+  const route = ROUTES[selectedRouteKey];
+  if (!route) return;
+  const np = nearestPoles(selectedRouteKey);
+  let best = -1, bestPos = Infinity;
+  (route.trips || []).forEach((t, i) => {
+    if (!t || t.h !== h) return;
+    const pos = np ? t.s.findIndex(([id]) => STOP_BY_ID.get(id)?.name === np.name) : 0;
+    const rel = pos < 0 ? Infinity : pos / t.s.length;
+    if (best < 0 || rel < bestPos) { bestPos = rel; best = i; }
+  });
+  if (best < 0) return;
+  selectedVariant = best;
+  ldKurs = null; ldBefore = false;
+  styleVariants();
+  renderLineDetail();
+}
+function setLdTab(tab) {
+  ldTab = tab;
+  document.querySelectorAll('.ld-tabs [data-ldtab]').forEach(b => {
+    const on = b.dataset.ldtab === tab;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  renderLdPane(detailToken);
+}
+
+// Szczegóły linii: nagłówek, kierunek, najbliższe odjazdy (kafelki = wybór kursu),
+// zakładki „Trasa i czasy” (przystanki z czasem i godziną dla wybranego kursu) i „Rozkład” (dni + tabela)
+function renderLineDetail() {
   const el = document.getElementById('line-detail');
+  updateSheet();
   if (!el) return;
   const key = selectedRouteKey;
   const route = key && ROUTES[key];
   if (!route) { el.innerHTML = ''; return; }
   const token = ++detailToken;
   const np = nearestPoles(key);
+  const trips = route.trips || [];
+  if (!trips[selectedVariant]) selectedVariant = Math.max(0, trips.findIndex(Boolean));
+  const t = trips[selectedVariant];
+  const kind = route.type === 'tram' ? 'Tramwaj' : 'Autobus';
+  const hw = isNight(key) ? 'linia nocna' : hwText(key, placeStats);
 
-  let html = `<div class="ld-head"><span class="badge ${route.type}">${esc(route.ref)}</span>
-    <div class="ld-name">${esc(route.name || (route.type === 'tram' ? 'Tramwaj' : 'Autobus'))}</div></div>`;
+  let html = `<div class="ld-head"><span class="ld-num ${route.type}">${esc(route.ref)}</span>
+    <div class="ld-ttl"><div class="ld-kind">${kind}${hw && hw !== 'nie kursuje' ? ` · ${hw}` : ''}</div>
+    <div class="ld-name">${esc(route.name || kind)}</div></div>
+    <button type="button" class="ld-close" data-line-close="1" aria-label="Zamknij linię ${esc(route.ref)}" title="Zamknij linię (Esc)">✕</button></div>`;
 
-  // --- odjazdy ---
-  html += '<div class="ld-sec"><h3>Odjazdy</h3>';
-  let depsHtml;
-  if (!META || !META.calendar) {
-    depsHtml = '<div class="muted">Rozkład jest dostępny tylko dla pełnych danych (stops_data.json + katalog deps/).</div>';
-  } else if (!np) {
-    depsHtml = '<div class="muted">Ta linia nie zatrzymuje się w zaznaczonym promieniu.</div>';
-  } else {
-    depsHtml = null;
-  }
-  if (depsHtml) {
-    html += depsHtml + '</div>';
-  } else {
-    const today = todayISO();
-    if (!selectedDay || selectedDay < today) selectedDay = today;
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(); d.setDate(d.getDate() + i);
-      days.push(localISO(d));
+  if (t) {
+    const dirs = [];
+    trips.forEach(x => { if (x && !dirs.includes(x.h)) dirs.push(x.h); });
+    if (dirs.length > 1) {
+      html += '<div class="dseg" role="group" aria-label="Kierunek">' + dirs.map(h =>
+        `<button type="button" data-dir="${esc(h)}" class="${h === t.h ? 'on' : ''}" aria-pressed="${h === t.h}" title="Kierunek ${esc(h)}">→ ${esc(h)}</button>`).join('') + '</div>';
     }
+    // ten sam kierunek w kilku wariantach (np. kursy z zajezdni): cały odcinek „skąd → dokąd”
+    const same = trips.map((x, i) => [x, i]).filter(([x]) => x && x.h === t.h);
+    if (same.length > 1) {
+      html += '<div class="chips ld-vars">' + same.map(([x, i]) =>
+        `<button type="button" class="chip${i === selectedVariant ? ' on' : ''}" data-variant="${i}">${esc(STOP_BY_ID.get(x.s[0][0])?.name || '')} → ${esc(x.h)}</button>`).join('') + '</div>';
+    } else if (dirs.length < 2) html += `<div class="ld-from">Kierunek <b>→ ${esc(t.h)}</b></div>`;
+  }
+
+  const hasDeps = META && META.calendar;
+  if (!hasDeps) html += '<div class="muted ld-from">Rozkład jest dostępny tylko dla pełnych danych (stops_data.json + katalog deps/).</div>';
+  else if (!np) html += '<div class="muted ld-from">Ta linia nie zatrzymuje się w zaznaczonym promieniu.</div>';
+  else {
     // odległość jak na liście przystanków: pieszo po ulicach, jeśli policzona
     const walkM = pointReach ? Math.min(...np.poles.map(p => pointReach.get(p.id) ?? Infinity)) : Infinity;
     const distTxt = isFinite(walkM) ? `${Math.round(walkM / 10) * 10} m pieszo` : `${Math.round(np.dist)} m`;
-    html += `<div class="ld-from">z przystanku <b>${esc(np.name)}</b>${stopMode ? '' : ` · ${distTxt}`}</div>`;
-    html += '<div class="chips">' + days.map((d, i) => {
-      const dd = new Date(d + 'T12:00');
-      const label = i === 0 ? 'Dziś' : i === 1 ? 'Jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
-      return `<button type="button" class="chip${d === selectedDay ? ' on' : ''}" data-day="${d}">${label}</button>`;
-    }).join('') + '</div>';
-    html += '<div id="deps-body"><div class="muted">Wczytuję rozkład…</div></div></div>';
+    html += `<div class="ld-from">Odjazdy z przystanku <b>${esc(np.name)}</b>${stopMode ? '' : ` · ${distTxt}`}</div>`
+      + '<div class="ld-next" id="ld-next"><div class="muted">Wczytuję rozkład…</div></div>';
   }
-
-  // --- czas przejazdu ---
-  html += '<div class="ld-sec"><h3>Czas przejazdu</h3>';
-  const trips = route.trips || [];
-  if (!trips.some(Boolean)) {
-    html += '<div class="muted">Brak czasów przejazdu w tych danych.</div></div>';
-  } else {
-    if (!trips[selectedVariant]) selectedVariant = trips.findIndex(Boolean);
-    if (trips.length > 1) {
-      const hcount = {};
-      trips.forEach(t => { if (t) hcount[t.h] = (hcount[t.h] || 0) + 1; });
-      html += '<div class="chips">' + trips.map((t, i) => {
-        if (!t) return '';
-        // ten sam kierunek w kilku wariantach: pokaż cały odcinek "skąd → dokąd"
-        const label = hcount[t.h] > 1 ? `${esc(STOP_BY_ID.get(t.s[0][0])?.name || '')} → ${esc(t.h)}` : `→ ${esc(t.h)}`;
-        return `<button type="button" class="chip${i === selectedVariant ? ' on' : ''}" data-variant="${i}">${label}</button>`;
-      }).join('') + '</div>';
-    }
-    const t = trips[selectedVariant];
-    const here = np ? t.s.findIndex(([id]) => STOP_BY_ID.get(id)?.name === np.name) : -1;
-    const base = here >= 0 ? (t.s[here][1] ?? 0) : 0;
-    const total = t.s[t.s.length - 1][1];
-    const fromName = STOP_BY_ID.get(t.s[here >= 0 ? here : 0][0])?.name || '';
-    const lastName = STOP_BY_ID.get(t.s[t.s.length - 1][0])?.name || t.h;
-    if (total != null) {
-      html += `<div class="ld-total">${esc(fromName)} → ${esc(lastName)}: <b>${total - base} min</b>`
-        + (here > 0 ? ` <span class="muted">(cała trasa ${total} min)</span>` : '') + '</div>';
-    }
-    html += '<ul class="tl">' + t.s.map(([id, off], i) => {
-      const name = STOP_BY_ID.get(id)?.name || id;
-      // dwa słupki tej samej nazwy pod rząd (np. pętla): jeden wiersz — zostaje późniejszy albo "tu"
-      const nm = j => STOP_BY_ID.get(t.s[j][0])?.name || t.s[j][0];
-      if (i !== here && ((i + 1 < t.s.length && nm(i + 1) === name) || (i > 0 && i - 1 === here && nm(i - 1) === name))) return '';
-      const cls = here >= 0 && i < here ? 'before' : i === here ? 'here' : '';
-      const val = off == null ? '' : (here >= 0 && i < here ? '' : `+${off - base} min`);
-      return `<li class="${cls}" data-stop-id="${esc(id)}" tabindex="0" title="Pokaż przystanek">${esc(name)}<span>${val}</span></li>`;
-    }).join('') + '</ul>';
-    html += `<div class="muted" style="margin-top:6px">Czasy z rozkładu dla kursu około południa; w szczycie mogą być dłuższe.</div></div>`;
-  }
-
+  html += `<div class="ld-tabs" role="tablist" aria-label="Szczegóły linii">`
+    + `<button type="button" role="tab" data-ldtab="trasa" class="${ldTab === 'trasa' ? 'on' : ''}" aria-selected="${ldTab === 'trasa'}">Trasa i czasy</button>`
+    + `<button type="button" role="tab" data-ldtab="rozklad" class="${ldTab === 'rozklad' ? 'on' : ''}" aria-selected="${ldTab === 'rozklad'}">Rozkład</button></div>`
+    + '<div id="ld-pane"></div>';
   el.innerHTML = html;
-  if (META && META.calendar && np) renderDeps(np, key, token);
+  renderLdPane(token);
+  if (hasDeps && np) renderLdNext(token);
 }
 
-async function renderDeps(np, key, token) {
-  const cells = [...new Set(np.poles.map(cellOf))];
-  const data = await Promise.all(cells.map(loadCell));
-  if (token !== detailToken) return;          // w międzyczasie kliknięto coś innego
-  const body = document.getElementById('deps-body');
-  if (!body) return;
+// najbliższe odjazdy w wybranym kierunku (dziś); kafelek = kurs, dla którego liczą się godziny na trasie
+async function renderLdNext(token) {
+  const key = selectedRouteKey, route = ROUTES[key], np = nearestPoles(key);
+  if (!route || !np) return;
+  const t = (route.trips || [])[selectedVariant];
+  const d = await lineDepsFor(np, key, todayISO());
+  const box = document.getElementById('ld-next');
+  if (token !== detailToken || !box) return;
+  const nowMin = nowMinutes();
+  const deps = d ? dirDeps(route, d.byH, t ? t.h : null, np.name) : [];
+  const next = deps.filter(x => x.m >= nowMin).slice(0, 4);
+  if (ldKurs != null && !next.some(x => x.m === ldKurs)) ldKurs = null;
+  if (ldKurs == null && next.length) ldKurs = next[0].m;
+  box.innerHTML = !d ? '<div class="muted">Brak rozkładu na dziś.</div>'
+    : !next.length ? `<div class="muted">${deps.length ? 'Dziś już nic stąd nie odjeżdża w tym kierunku.' : 'Dziś ta linia nie odjeżdża stąd w tym kierunku.'}</div>`
+    : next.map(x => `<button type="button" class="ld-nt${x.m === ldKurs ? ' on' : ''}" data-kurs="${x.m}" aria-pressed="${x.m === ldKurs}" title="Godziny na trasie dla kursu o ${fmt(x.m)}">`
+      + `<b>${fmt(x.m)}</b><small>${zaMin(x.m - nowMin)}</small>${t && x.h !== t.h ? `<em>→ ${esc(x.h)}</em>` : ''}</button>`).join('');
+  if (ldTab === 'trasa') renderLdPane(token);   // godziny przyjazdu zależą od wybranego kursu
+}
 
-  const prof = profileFor(selectedDay);
-  if (!prof) { body.innerHTML = '<div class="muted">Brak rozkładu na ten dzień.</div>'; return; }
-
-  // scal odjazdy ze wszystkich słupków przystanku, pogrupowane po kierunku
-  const byDir = new Map();
-  np.poles.forEach(s => {
-    data.forEach(cell => (cell[s.id]?.[key] || []).forEach(e => {
-      const mins = e.t[e.p[prof.p]] || [];
-      if (!byDir.has(e.h)) byDir.set(e.h, []);
-      byDir.get(e.h).push(...mins);
-    }));
+function renderLdPane(token) {
+  const pane = document.getElementById('ld-pane');
+  const key = selectedRouteKey, route = key && ROUTES[key];
+  if (!pane || !route || token !== detailToken) return;
+  if (ldTab === 'rozklad') { renderLdTimetable(pane, route, key); return; }
+  const t = (route.trips || [])[selectedVariant];
+  if (!t) { pane.innerHTML = '<div class="muted">Brak czasów przejazdu w tych danych.</div>'; return; }
+  const np = nearestPoles(key);
+  const here = np ? t.s.findIndex(([id]) => STOP_BY_ID.get(id)?.name === np.name) : -1;
+  const base = here >= 0 ? (t.s[here][1] ?? 0) : 0;
+  const total = t.s[t.s.length - 1][1];
+  const lastName = STOP_BY_ID.get(t.s[t.s.length - 1][0])?.name || t.h;
+  const kurs = here >= 0 && ldKurs != null ? ldKurs : null;
+  let html = '';
+  if (total != null) {
+    html += `<div class="ld-total">Do ${esc(lastName)}: <b>${total - base} min</b>`
+      + (kurs != null ? `, na miejscu ok. <b>${fmt(kurs + total - base)}</b>` : '')
+      + (here > 0 ? ` <span class="muted">(cała trasa ${total} min)</span>` : '') + '</div>';
+  }
+  // dwa słupki tej samej nazwy pod rząd (np. pętla): jeden wiersz — zostaje późniejszy albo "tu"
+  const nm = j => STOP_BY_ID.get(t.s[j][0])?.name || t.s[j][0];
+  const rows = [];
+  t.s.forEach(([id, off], i) => {
+    const name = nm(i);
+    if (i !== here && ((i + 1 < t.s.length && nm(i + 1) === name) || (i > 0 && i - 1 === here && nm(i - 1) === name))) return;
+    rows.push({ i, id, name, off });
   });
-  const dirs = [...byDir.entries()].map(([h, m]) => [h, [...new Set(m)].sort((a, b) => a - b)]).filter(([, m]) => m.length);
-  if (!dirs.length) { body.innerHTML = '<div class="muted">Tego dnia ta linia nie odjeżdża z tego przystanku.</div>'; return; }
-
-  const isToday = selectedDay === todayISO();
-  const now = new Date(); const nowMin = now.getHours() * 60 + now.getMinutes();
-  let html = prof.approx ? `<div class="muted" style="margin-bottom:8px">Brak danych na ten dzień — pokazuję rozkład z ${prof.approx}.</div>` : '';
-  dirs.forEach(([h, mins]) => {
-    html += `<div class="dir"><div class="dir-h">→ ${esc(h)}</div>`;
-    if (isToday) {
-      const next = mins.filter(m => m >= nowMin).slice(0, 4);
-      html += next.length
-        ? '<div class="next">' + next.map(m => `<span>${fmt(m)}<small>${zaMin(m - nowMin)}</small></span>`).join('') + '</div>'
-        : '<div class="muted">Dziś już nie ma odjazdów.</div>';
+  const before = rows.filter(r => here >= 0 && r.i < here);
+  if (before.length && !ldBefore) {
+    html += `<button type="button" class="ld-more" data-ld-before="1"><span aria-hidden="true">↑</span> ${before.length} ${plural(before.length, 'wcześniejszy przystanek', 'wcześniejsze przystanki', 'wcześniejszych przystanków')}, od ${esc(before[0].name)}</button>`;
+  }
+  html += '<ul class="tl">' + rows.filter(r => ldBefore || !(here >= 0 && r.i < here)).map(r => {
+    const isBefore = here >= 0 && r.i < here;
+    const cls = isBefore ? 'before' : r.i === here ? 'here' : '';
+    let val = '';
+    if (r.off != null && !isBefore) {
+      val = r.i === here ? '' : `+${r.off - base} min`;
+      if (kurs != null) val += `<b class="clk">${fmt(kurs + r.off - base)}</b>`;
     }
-    const hours = new Map();
-    mins.forEach(m => { const hh = Math.floor(m / 60); if (!hours.has(hh)) hours.set(hh, []); hours.get(hh).push(m); });
-    const table = '<table class="tt">' + [...hours.entries()].map(([hh, ms]) =>
-      `<tr><td class="h">${hh % 24}</td><td class="m">` + ms.map(m =>
-        `<span class="${isToday && m < nowMin ? 'past' : ''}">${String(m % 60).padStart(2, '0')}</span>`).join(' ') + '</td></tr>'
-    ).join('') + '</table>';
-    html += isToday ? `<details><summary>Pełny rozkład (${nDeps(mins.length)})</summary>${table}</details>`
-                    : `<div class="muted">${nDeps(mins.length)}</div>${table}`;
-    html += '</div>';
-  });
-  body.innerHTML = html;
+    return `<li class="${cls}" data-stop-id="${esc(r.id)}" tabindex="0" title="Pokaż przystanek"><div>${esc(r.name)}${r.i === here ? '<i class="here-tag">tu wsiadasz</i>' : ''}</div><span>${val}</span></li>`;
+  }).join('') + '</ul>';
+  html += `<div class="muted" style="margin-top:6px">Czasy z rozkładu dla kursu około południa; w szczycie mogą być dłuższe.${kurs != null ? ' Godziny przyjazdu są przybliżone.' : ''}</div>`;
+  pane.innerHTML = html;
+}
+
+// zakładka „Rozkład”: dzień + tabela godzin w wybranym kierunku; dziś wcześniejsze godziny zwinięte
+async function renderLdTimetable(pane, route, key) {
+  const np = nearestPoles(key);
+  if (!META || !META.calendar) { pane.innerHTML = '<div class="muted">Rozkład jest dostępny tylko dla pełnych danych (stops_data.json + katalog deps/).</div>'; return; }
+  if (!np) { pane.innerHTML = '<div class="muted">Ta linia nie zatrzymuje się w zaznaczonym promieniu.</div>'; return; }
+  const today = todayISO();
+  if (!selectedDay || selectedDay < today) selectedDay = today;
+  const days = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(localISO(d)); }
+  pane.innerHTML = '<div class="chips">' + days.map((d, i) => {
+    const dd = new Date(d + 'T12:00');
+    const label = i === 0 ? 'Dziś' : i === 1 ? 'Jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
+    return `<button type="button" class="chip${d === selectedDay ? ' on' : ''}" data-day="${d}" aria-pressed="${d === selectedDay}">${label}</button>`;
+  }).join('') + '</div><div id="ld-tt"><div class="muted">Wczytuję rozkład…</div></div>';
+  const tok = ++ttToken, day = selectedDay;
+  const d = await lineDepsFor(np, key, day);
+  const box = document.getElementById('ld-tt');
+  if (tok !== ttToken || !box) return;
+  if (!d) { box.innerHTML = '<div class="muted">Brak rozkładu na ten dzień.</div>'; return; }
+  const t = (route.trips || [])[selectedVariant];
+  const deps = dirDeps(route, d.byH, t ? t.h : null, np.name);
+  if (!deps.length) { box.innerHTML = `<div class="muted">Tego dnia ta linia nie odjeżdża stąd${t ? ` w kierunku ${esc(t.h)}` : ''}.</div>`; return; }
+  const isToday = day === today, nowMin = nowMinutes();
+  const nextM = isToday ? deps.find(x => x.m >= nowMin)?.m : undefined;
+  const hours = new Map();
+  deps.forEach(x => { const hh = Math.floor(x.m / 60); if (!hours.has(hh)) hours.set(hh, []); hours.get(hh).push(x); });
+  let entries = [...hours.entries()], early = '';
+  if (isToday && !ldEarly) {
+    const curH = Math.floor(nowMin / 60);
+    const past = entries.filter(([hh]) => hh < curH);
+    if (past.length >= 2) {
+      const n = past.reduce((a, [, xs]) => a + xs.length, 0);
+      const hm = m => fmt(m).replace(/^0/, '');
+      const lastPast = past[past.length - 1][1];
+      early = `<button type="button" class="ld-more" data-ld-early="1"><span aria-hidden="true">↑</span> Wcześniej: ${hm(past[0][1][0].m)}–${hm(lastPast[lastPast.length - 1].m)} (${nDeps(n)})</button>`;
+      entries = entries.filter(([hh]) => hh >= curH);
+    }
+  }
+  const alts = new Set();
+  const table = '<table class="tt">' + entries.map(([hh, xs]) =>
+    `<tr><td class="h">${hh % 24}</td><td class="m">` + xs.map(x => {
+      const alt = !!t && x.h !== t.h;
+      if (alt) alts.add(x.h);
+      const cls = [isToday && x.m < nowMin ? 'past' : '', x.m === nextM ? 'nx' : '', alt ? 'alt' : ''].filter(Boolean).join(' ');
+      return `<span class="${cls}"${alt ? ` title="→ ${esc(x.h)}"` : ''}>${String(x.m % 60).padStart(2, '0')}${alt ? '°' : ''}</span>`;
+    }).join(' ') + '</td></tr>').join('') + '</table>';
+  box.innerHTML = (d.prof.approx ? `<div class="muted" style="margin-bottom:6px">Brak danych na ten dzień — pokazuję rozkład z ${d.prof.approx}.</div>` : '')
+    + `<div class="muted" style="margin-bottom:6px">${nDeps(deps.length)}${nextM != null ? `, najbliższy <b>${fmt(nextM)}</b> (${zaMin(nextM - nowMin)})` : ''}</div>`
+    + early + table
+    + (alts.size ? `<div class="muted tt-note">° kurs tylko do: ${[...alts].map(esc).join(', ')}</div>` : '');
 }
 
 // Własna pinezka jako inline SVG — domyślna ikonka Leaflet to plik PNG z folderu
@@ -1310,7 +1727,8 @@ const clickIcon = L.divIcon({
   iconAnchor: [13, 36],
 });
 
-// Przycisk "moja lokalizacja" (pod + −): zaznacza punkt w miejscu użytkownika
+// Przycisk "moja lokalizacja" (pod + −, na telefonie w prawym górnym rogu): zaznacza punkt w miejscu użytkownika
+let locateCtl = null;
 const LocateControl = L.Control.extend({
   options: { position: 'topleft' },
   onAdd() {
@@ -1378,7 +1796,7 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
 
-  new LocateControl().addTo(map);
+  locateCtl = new LocateControl({ position: isMobile() ? 'topright' : 'topleft' }).addTo(map);
   // legenda kolorów przystanków (lewy dolny róg, obok atrybucji)
   const Legend = L.Control.extend({
     options: { position: 'bottomleft' },
@@ -1425,7 +1843,7 @@ function initMap() {
   map.on('resize', fitMinZoom);
   map.on('resize', () => {
     const o = isoOrigin();
-    if (o && !map.getBounds().pad(-0.15).contains([o.lat, o.lon])) map.panTo([o.lat, o.lon], { animate: false });
+    if (o && !viewBounds(0.15).contains([o.lat, o.lon])) panToVisible(L.latLng(o.lat, o.lon), false);
   });
 
   radiusInput.addEventListener('input', () => setRadius(parseInt(radiusInput.value, 10), true));
@@ -2267,6 +2685,7 @@ const hasHeadways = () => hasHwCache ?? (hasHwCache = Object.values(ROUTES).some
 const ISO_ICON = `<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>`;
 const DAY_SHORT = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela' };
 function renderIsoChip() {
+  updateSheet();
   const el = isoChipEl;
   if (!el) return;
   const o = iso ? iso.o : isoOrigin();
@@ -2294,11 +2713,7 @@ function onIsoChip(e) {
   if (a === 'on') computeIso();
   else if (a === 'off') { clearIso(); renderIsoBox(); syncURL(true); }
   else if (a === '-' || a === '+') applyIsoT((iso ? iso.T : isoT) + (a === '+' ? 5 : -5));
-  else if (a === 'edit') {
-    const lay = document.getElementById('layout');
-    if (window.matchMedia('(max-width: 760px)').matches && !lay.classList.contains('expanded')) panelToggle.click();
-    document.getElementById('iso-box')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }
+  else if (a === 'edit') document.getElementById('iso-box')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 async function computeIso() {
@@ -2338,8 +2753,8 @@ function fitIsoView() {
   const pts = [[iso.o.lat, iso.o.lon]];
   iso.labels.forEach((l, id) => { if (l.t <= iso.T) { const s = STOP_BY_ID.get(id); pts.push([s.lat, s.lon]); } });
   const b = L.latLngBounds(pts);
-  if (!b.isValid() || map.getBounds().contains(b)) return;
-  map.fitBounds(b, { padding: [24, 24], maxZoom: map.getZoom() });
+  if (!b.isValid() || viewBounds().contains(b)) return;
+  map.fitBounds(b, { ...fitPad(24), maxZoom: map.getZoom() });
 }
 let isoToken = 0;
 
@@ -2561,7 +2976,8 @@ function renderIsoBox() {
     ${tm && iso.rides === 0 ? '<div class="iso-next" id="iso-next">Sprawdzam najbliższy odjazd…</div>' : ''}
     <div class="iso-legend">${iso.bands.map((b, i) =>
       `<i style="background:${b.color}"></i><span>${b.lo}–${b.hi} min</span><span>${counts[i]} przyst.</span>`).join('')}</div>
-    <div class="iso-next" style="margin:10px 0 0"><b>Kliknij miejsce na mapie</b> — pokażę czas i trasę${COARSE ? '' : ' (albo tylko najedź kursorem)'}, a „Sprawdź to miejsce” w dymku zrobi z niego nowy start. Zasięg zostaje włączony.</div>
+    <div class="iso-tip">Stuknij miejsce na mapie — pokażę czas i trasę, a „Sprawdź to miejsce” zrobi z niego nowy start.</div>
+    <div class="iso-next iso-hint" style="margin:10px 0 0"><b>Kliknij miejsce na mapie</b> — pokażę czas i trasę${COARSE ? '' : ' (albo tylko najedź kursorem)'}, a „Sprawdź to miejsce” w dymku zrobi z niego nowy start. Zasięg zostaje włączony.</div>
     <div class="muted" style="margin-top:10px">${note}</div>
   </div>`;
   const inp = document.getElementById('iso-t');
@@ -2775,7 +3191,7 @@ function backToPlace() {
     if (st) selectStop(st); else selectPoint(L.latLng(p.lat, p.lon));
   } finally { restoringPlace = false; }
   renderBackPlace();
-  if (!map.getBounds().pad(-0.15).contains([p.lat, p.lon])) map.panTo([p.lat, p.lon]);
+  if (!viewBounds(0.15).contains([p.lat, p.lon])) panToVisible(L.latLng(p.lat, p.lon));
 }
 document.getElementById('back-place').addEventListener('click', backToPlace);
 
@@ -2789,6 +3205,7 @@ function addOriginMarker(latlng) {
 
 function selectPoint(latlng, opts = {}) {
   if (!opts.remembered) rememberPlace({ lat: latlng.lat, lon: latlng.lng });
+  sheetState = 'peek';
   const keepIso = !!iso;
   clearIso();
   showNotice('');
@@ -2803,6 +3220,7 @@ function selectPoint(latlng, opts = {}) {
   recompute(latlng);
   document.getElementById('panel').scrollTop = 0;
   renderBackPlace();
+  updateSheet();
   syncURL(true);
   if (keepIso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego miejsca
 }
@@ -2832,6 +3250,8 @@ function selectStop(s) {
     .sort((a, b) => a.dist - b.dist);
   stopMode = { id: s.id, name: s.name, lat: s.lat, lon: s.lon, poles };
   boardLimit = 8;
+  sheetState = 'peek';
+  lastOutside = null;
   showNotice('');
   pointReach = null;
   document.getElementById('panel').classList.add('stop-mode');
@@ -2846,6 +3266,7 @@ function selectStop(s) {
   renderStopPanel();
   document.getElementById('panel').scrollTop = 0;
   renderBackPlace();
+  updateSheet();
   syncURL(true);
   if (iso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego przystanku
 }
@@ -2904,14 +3325,16 @@ function renderStopPanel() {
   document.getElementById('panel-title').textContent = name;
   document.getElementById('panel-sub').textContent = `${b.count} ${linii(b.count)}`
     + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'nocna', 'nocne', 'nocnych')}` : '');
-  let html = '<div id="target-box"></div>';
-  html += `<button type="button" class="link-btn" data-around="1">Pokaż linie w promieniu ${radiusMeters} m od tego przystanku</button>`;
-  html += '<div id="iso-box"></div>';
-  html += '<div class="ld-sec"><h3>Najbliższe odjazdy</h3><div id="board"><div class="muted">Wczytuję…</div></div></div>';
-  html += `<div id="lines-box">${b.html}</div>`;
-  html += '<div id="line-detail"></div>';
-  html += '<div id="place-card" style="margin-top:16px"></div>';
-  document.getElementById('results').innerHTML = html;
+  const html = tabsHtml('stop', [['odjazdy', 'Odjazdy'], ['linie', `Linie · ${b.count}`], ['dojazdy', 'Dojazdy']])
+    + tabPane('stop', 'odjazdy', '<div id="target-box"></div>'
+      + `<button type="button" class="link-btn" data-around="1">Pokaż linie w promieniu ${radiusMeters} m od tego przystanku</button>`
+      + '<div id="iso-box"></div>'
+      + '<div class="ld-sec"><h3>Najbliższe odjazdy</h3><div id="board"><div class="muted">Wczytuję…</div></div></div>')
+    + tabPane('stop', 'linie', `<div id="lines-box">${b.html}</div><div id="line-detail"></div>`)
+    + tabPane('stop', 'dojazdy', '<div id="place-card" style="margin-top:16px"></div>');
+  const res = document.getElementById('results');
+  res.innerHTML = html;
+  res.classList.add('tabbed');
   renderIsoBox();
   updateBadgeSelection();
   renderLineDetail();
@@ -3019,10 +3442,13 @@ function showEmpty() {
   lastNearby = [];
   pointReach = null;
   highlightStops(new Set());
+  lastOutside = null;
   document.getElementById('panel').classList.remove('stop-mode');
-  document.getElementById('panel-title').textContent = 'Wybierz miejsce na mapie';
+  document.getElementById('panel-title').textContent = isMobile() ? 'Stuknij dowolne miejsce na mapie' : 'Wybierz miejsce na mapie';
   document.getElementById('panel-sub').textContent = '';
   document.getElementById('results').innerHTML = EMPTY_HTML;
+  document.getElementById('results').classList.remove('tabbed');
+  renderPlaceHead();
   showNotice('');
   renderIsoChip();
   renderBackPlace();
@@ -3043,7 +3469,7 @@ async function applyState() {
     } else target = null;
     targetPopOn = false;   // po „Wstecz” / z linku: cel bez dymka
     // widok: miejsce ma być wyraźnie w środku mapy, nie przy krawędzi
-    const inView = ll => map.getBounds().pad(-0.2).contains(ll);
+    const inView = ll => viewBounds(0.2).contains(ll);
     const s = p.get('s') && STOP_BY_ID.get(p.get('s'));
     const pt = (p.get('p') || '').split(',').map(Number);
     if (s) {
@@ -3051,7 +3477,7 @@ async function applyState() {
       if (!inView([s.lat, s.lon])) map.setView([s.lat, s.lon], Math.max(map.getZoom(), 15));
     } else if (pt.length === 2 && pt.every(Number.isFinite)) {
       const r = +p.get('r');
-      if (r >= 200 && r <= 2000) { radiusMeters = Math.round(r / 100) * 100; radiusInput.value = radiusMeters; radiusVal.textContent = radiusMeters + ' m'; }
+      if (r >= 200 && r <= 2000) { radiusMeters = Math.round(r / 100) * 100; radiusInput.value = radiusMeters; radiusVal.textContent = radiusMeters + ' m'; syncRseg(); }
       const ll = L.latLng(pt[0], pt[1]);
       selectPoint(ll);
       if (!inView(ll)) map.setView(ll, Math.max(map.getZoom(), 15));
@@ -3125,16 +3551,38 @@ function recompute(latlng) {
   renderPanel(nearby);
 }
 
+// Zakładki panelu (widać je tylko na telefonie; na komputerze wszystkie części są pod sobą, w tej samej kolejności)
+const ptab = { point: 'dojazdy', stop: 'odjazdy' };
+function tabsHtml(kind, tabs) {
+  if (!tabs.some(([id]) => id === ptab[kind])) ptab[kind] = tabs[0][0];
+  return '<div class="ptabs" role="tablist" aria-label="Części panelu">' + tabs.map(([id, label]) =>
+    `<button type="button" role="tab" data-ptab="${id}" class="${id === ptab[kind] ? 'on' : ''}" aria-selected="${id === ptab[kind]}">${label}</button>`).join('') + '</div>';
+}
+const tabPane = (kind, id, inner) => `<div class="tabp${ptab[kind] === id ? ' on' : ''}" data-tab="${id}">${inner}</div>`;
+function pickTab(id) {
+  ptab[stopMode ? 'stop' : 'point'] = id;
+  document.querySelectorAll('.ptabs [data-ptab]').forEach(b => { const on = b.dataset.ptab === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+  document.querySelectorAll('#results .tabp').forEach(el => el.classList.toggle('on', el.dataset.tab === id));
+  if (isMobile()) {
+    if (sheetState === 'peek') setSheet('full');
+    const tabs = document.querySelector('.ptabs');
+    if (tabs && panelEl.scrollTop > tabs.offsetTop - 26) panelEl.scrollTop = tabs.offsetTop - 26;
+  }
+}
+
+let lastOutside = null;   // najbliższe przystanki poza okręgiem, gdy w okręgu nie ma żadnego
 function renderPanel(nearby) {
   clearPreview();
   const title = document.getElementById('panel-title');
   const sub = document.getElementById('panel-sub');
   const results = document.getElementById('results');
+  lastOutside = null;
 
   if (nearby.length === 0) {
     // bez ślepego zaułka: najbliższe przystanki poza okręgiem + dojazdy do celów i tak działają
     const c = radiusCircle.getLatLng();
     const near = nearestOutside(c);
+    lastOutside = near;
     title.textContent = `Brak przystanków w promieniu ${radiusMeters} m`;
     sub.textContent = near.length ? `Najbliższy: ${near[0].name}, ${fmtDist(near[0].walk ?? near[0].dist)}${near[0].walk != null ? ' pieszo' : ''}.`
       : 'W okolicy nie ma żadnego przystanku.';
@@ -3148,6 +3596,7 @@ function renderPanel(nearby) {
         + (need > radiusMeters ? `<button type="button" class="link-btn" style="margin-top:8px" data-radius-to="${need}">Pokaż linie w promieniu ${need} m</button>` : '');
     }
     results.innerHTML = html;
+    results.classList.remove('tabbed');
     renderIsoBox();
     announce();
     refreshPlace();
@@ -3160,9 +3609,6 @@ function renderPanel(nearby) {
   sub.textContent = `${nNames} ${przystanki(nNames)} w promieniu ${radiusMeters} m`
     + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'linia nocna', 'linie nocne', 'linii nocnych')}` : '') + '.';
 
-  let html = '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>';
-  html += `<div id="lines-box">${b.html}</div>`;
-  html += '<div id="line-detail"></div>';
   // Jedna pozycja na nazwę przystanku (ZTP ma osobny słupek na każdy kierunek/peron)
   const byName = new Map();
   nearby.forEach(s => {
@@ -3175,12 +3621,12 @@ function renderPanel(nearby) {
   });
   const km = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toLocaleString('pl', { maximumFractionDigits: 1 })} km`;
   const nUn = [...byName.values()].filter(g => g.walk === null).length;
-  html += '<div class="group-label" style="margin-top:14px">Przystanki</div>';
-  if (nUn) html += `<div class="unreach-note"><i></i>${nUn === 1 ? '1 przystanek' : `${nUn} ${nUn % 10 >= 2 && nUn % 10 <= 4 && (nUn % 100 < 12 || nUn % 100 > 14) ? 'przystanki' : 'przystanków'}`} w okręgu bez dojścia pieszo z tego miejsca (np. za rzeką albo torami).</div>`;
+  let stHtml = '<div class="group-label" style="margin-top:14px">Przystanki</div>';
+  if (nUn) stHtml += `<div class="unreach-note"><i></i>${nUn === 1 ? '1 przystanek' : `${nUn} ${nUn % 10 >= 2 && nUn % 10 <= 4 && (nUn % 100 < 12 || nUn % 100 > 14) ? 'przystanki' : 'przystanków'}`} w okręgu bez dojścia pieszo z tego miejsca (np. za rzeką albo torami).</div>`;
   // kolejność: najkrótsze dojście pieszo (jeśli znane), przystanki bez dojścia na końcu
   const sortKey = g => g.walk === null ? Infinity : g.walk != null ? g.walk : g.dist;
   const groups = [...byName.values()].sort((a, b) => sortKey(a) - sortKey(b) || a.dist - b.dist);
-  html += '<div class="stop-list">' + groups.map(g => {
+  stHtml += '<div class="stop-list">' + groups.map(g => {
     // nazwa + dojście pieszo (kolumna); pod spodem odległość w linii prostej
     const un = g.walk === null, known = g.walk != null;
     const right = un ? '' : known ? `${km(g.walk)} pieszo` : `${Math.round(g.dist)} m`;
@@ -3192,7 +3638,12 @@ function renderPanel(nearby) {
       + (meta ? `<div class="si-meta">${meta}</div>` : '') + '</div>';
   }).join('') + '</div>';
 
-  document.getElementById('results').innerHTML = html;
+  const html = tabsHtml('point', [['dojazdy', 'Dojazdy'], ['linie', `Linie · ${b.count}`], ['przystanki', `Przystanki · ${nNames}`]])
+    + tabPane('point', 'dojazdy', '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>')
+    + tabPane('point', 'linie', `<div id="lines-box">${b.html}</div><div id="line-detail"></div>`)
+    + tabPane('point', 'przystanki', stHtml);
+  results.innerHTML = html;
+  results.classList.add('tabbed');
   updateBadgeSelection();
   renderLineDetail();
   renderIsoBox();
@@ -3218,10 +3669,23 @@ function nearestOutside(c) {
   return [...byName.values()].sort((a, b) => a.key - b.key).slice(0, 3);
 }
 
+// przyciski promienia na telefonie (300 m / 500 m / 1 km / 2 km)
+function syncRseg() {
+  document.querySelectorAll('.rseg [data-r]').forEach(b => {
+    const on = +b.dataset.r === radiusMeters;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
+document.querySelector('.rseg').addEventListener('click', e => {
+  const b = e.target.closest('[data-r]');
+  if (b) setRadius(+b.dataset.r);
+});
 function setRadius(m, fromSlider) {
   radiusMeters = Math.min(2000, Math.max(200, Math.round(m / 100) * 100));
   if (!fromSlider) radiusInput.value = radiusMeters;
   radiusVal.textContent = radiusMeters + ' m';
+  syncRseg();
   if (radiusCircle && !stopMode) {
     radiusCircle.setRadius(radiusMeters);
     recompute(radiusCircle.getLatLng());   // promień zmienia tylko listę linii; zasięg i dojazdy się nie zmieniają
@@ -3366,7 +3830,85 @@ function routeSummary(r) {
     + (r.walkMin >= 1 ? ` · pieszo ${Math.round(r.walkMin)} min` : '');
 }
 
+// ---------------------------------------------------------------------------
+// Werdykt „Czy to zadupie?” + trzy liczby (nad promieniem, #place-head).
+// Poziom 0–3 z kursów na godzinę w jedną stronę (6–20, suma linii dziennych z przystanków w okręgu,
+// do których da się dojść) i dojścia do najbliższego przystanku.
+// ---------------------------------------------------------------------------
+const VERDICT = ['Tak, to zadupie.', 'Trochę zadupie.', 'Raczej nie zadupie.', 'Nie, to nie zadupie.'];
+const VERDICT_SCALE = ['zadupie', 'da się żyć', 'dobrze', 'pępek świata'];
+function verdictLevel(perHour, walkMin) {
+  let lvl = perHour >= 30 ? 3 : perHour >= 10 ? 2 : perHour >= 3 ? 1 : 0;
+  if (walkMin != null) {
+    if (walkMin > 25) lvl = 0;
+    else if (walkMin > 15) lvl = Math.min(lvl, 1);
+    else if (walkMin > 10) lvl = Math.min(lvl, 2);
+  }
+  return lvl;
+}
+// najbliższy przystanek pieszo z zaznaczonego punktu: {name, w (m), outside}
+function nearestWalk() {
+  if (stopMode) return null;
+  let best = null;
+  lastNearby.forEach(s => {
+    const w = pointReach ? pointReach.get(s.id) : s.dist * 1.3;
+    if (w != null && (!best || w < best.w)) best = { name: s.name, w };
+  });
+  if (!best && lastOutside && lastOutside.length) {
+    const g = lastOutside[0];
+    best = { name: g.name, w: g.walk ?? g.dist * 1.3, outside: true };
+  }
+  return best;
+}
+function renderPlaceHead() {
+  const el = document.getElementById('place-head');
+  const o = isoOrigin();
+  if (!o) { el.innerHTML = ''; panelEl.classList.remove('has-head'); return; }
+  panelEl.classList.add('has-head');
+  const nw = nearestWalk();
+  const walkMin = stopMode ? 0 : nw ? Math.max(1, Math.round(nw.w / WALK_SPEED)) : null;
+  const st = placeStats;
+  const hasData = META && META.calendar;
+  const noStops = !stopMode && !lastNearby.length;
+  // linie (jak w tytule: wszystkie w okręgu / na przystanku), nocne osobno
+  const keys = new Set();
+  (stopMode ? stopMode.poles : lastNearby).forEach(s => s.lines.forEach(l => keys.add(`${l.ref}|${l.type}`)));
+  const nDay = [...keys].filter(k => !isNight(k)).length, nNight = keys.size - nDay;
+
+  let lvl = null, verdict;
+  if (noStops) {
+    if (walkMin == null || walkMin > 15) { lvl = 0; verdict = VERDICT[0]; }
+    else verdict = `W promieniu ${fmtDist(radiusMeters)} nie ma przystanku.`;
+  } else if (st) { lvl = verdictLevel(st.perHour, walkMin); verdict = VERDICT[lvl]; }
+  else if (hasData && !placePoles().length) { lvl = verdictLevel(0, walkMin); verdict = VERDICT[lvl]; }
+  else verdict = hasData ? 'Sprawdzam…' : '';
+
+  const tile = (b, span, title = '') => `<div class="ph-t"${title ? ` title="${esc(title)}"` : ''}><b>${b}</b><span>${span}</span></div>`;
+  const tiles = [];
+  if (st) {
+    const n = Math.round(st.perHour);
+    tiles.push(st.perHour > 0 && n < 1 ? tile('&lt; 1', 'kurs na godzinę', 'W godz. 6–20, w jedną stronę')
+      : tile(n, `${plural(n, 'kurs', 'kursy', 'kursów')} na godzinę`, 'W godz. 6–20, w jedną stronę, suma linii dziennych'));
+  } else tiles.push(tile(noStops ? '0' : hasData ? '…' : '—', 'kursów na godzinę'));
+  if (stopMode) {
+    let top = null;
+    if (st) st.per.forEach((v, k) => { if (!isNight(k) && v.maxPole && (!top || v.maxPole > top.v.maxPole)) top = { k, v }; });
+    tiles.push(top ? tile(`co ${Math.max(1, Math.round(840 / top.v.maxPole))} min`, `najczęściej linia ${esc(top.k.split('|')[0])}`)
+      : tile(st || !hasData ? '—' : '…', 'najczęstsza linia'));
+  } else {
+    tiles.push(walkMin != null ? tile(`${walkMin} min`, 'pieszo do przystanku', nw ? `${nw.name}, ${fmtDist(nw.w)}` : '') : tile('—', 'pieszo do przystanku'));
+  }
+  tiles.push(tile(`${nDay} ${linii(nDay)}`, nNight ? `+ ${nNight} ${plural(nNight, 'nocna', 'nocne', 'nocnych')}` : 'bez nocnych'));
+
+  el.innerHTML = (nw ? `<div class="ph-where">${nw.outside ? 'Najbliższy przystanek' : 'Okolice przystanku'} <b>${esc(nw.name)}</b></div>` : '')
+    + (verdict ? `<div class="ph-verdict${lvl == null ? ' wait' : ''}">${esc(verdict)}</div>` : '')
+    + (lvl != null ? `<div class="ph-meter" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i class="${i <= lvl ? 'on' : ''}"></i>`).join('')}</div>`
+      + `<div class="ph-scale" aria-hidden="true">${VERDICT_SCALE.map((t, i) => `<span class="${i === lvl ? 'on' : ''}">${t}</span>`).join('')}</div>` : '')
+    + `<div class="ph-tiles">${tiles.join('')}</div>`;
+}
+
 function renderPlaceCard() {
+  renderPlaceHead();
   const el = document.getElementById('place-card');
   if (!el) return;
   const o = isoOrigin();
@@ -3464,7 +4006,7 @@ function setTarget(lat, lon, label, fromList, opts = {}) {
   // pokaż start i cel razem (bez przybliżania)
   const o = isoOrigin();
   const b = L.latLngBounds([[lat, lon]].concat(o ? [[o.lat, o.lon]] : []));
-  if (!map.getBounds().pad(-0.1).contains(b)) map.fitBounds(b, { padding: [60, 60], maxZoom: map.getZoom() });
+  if (!viewBounds(0.1).contains(b)) map.fitBounds(b, { ...fitPad(60), maxZoom: map.getZoom() });
   if (!targetPopOn) document.getElementById('target-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 // Cel staje się nowym startem (zasięg zostaje włączony). Przystanek otwiera się jako przystanek.
@@ -3514,7 +4056,8 @@ function renderTargetPop(r, C, name) {
   const html = `<div class="tp-t">${head}</div><div class="tp-name">${esc(name)}</div>
     <button type="button" class="tp-go" data-pop-origin="1">${target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce'}</button>`;
   if (!targetPop) {
-    targetPop = L.popup({ className: 'target-pop', offset: [0, -30], autoPanPadding: [40, 40], maxWidth: 260, closeOnEscapeKey: false });
+    // na telefonie dymek jest ukryty (cel pokazuje karta w arkuszu), więc bez przesuwania mapy pod niego
+    targetPop = L.popup({ className: 'target-pop', offset: [0, -30], autoPan: !isMobile(), autoPanPadding: [40, 40], maxWidth: 260, closeOnEscapeKey: false });
     targetPop.on('remove', () => {
       map.getContainer().classList.remove('tpop-open');
       if (!targetPopSync) targetPopOn = false;   // zamknięty przez użytkownika (×) — cel zostaje
@@ -3601,21 +4144,42 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 
-// telefon: panel pod mapą da się rozwinąć
-const panelToggle = document.getElementById('panel-toggle');
-panelToggle.addEventListener('click', () => {
-  const on = document.getElementById('layout').classList.toggle('expanded');
-  panelToggle.setAttribute('aria-expanded', on);
-  panelToggle.textContent = on ? 'Mniej' : 'Więcej';
-  setTimeout(() => map && map.invalidateSize(), 230);
+// telefon: uchwyt arkusza (stuknięcie) i przesunięcie palcem w górę / w dół
+document.getElementById('panel-toggle').addEventListener('click', () => setSheet(sheetState === 'full' ? 'peek' : 'full'));
+document.getElementById('m-back').addEventListener('click', () => {
+  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  else if (iso) { clearIso(); renderIsoBox(); syncURL(true); }
+  else closePlace();
+});
+let touchY0 = null, touchScroll0 = 0;
+panelEl.addEventListener('touchstart', e => {
+  if (!isMobile() || e.touches.length !== 1) { touchY0 = null; return; }
+  touchY0 = e.touches[0].clientY;
+  touchScroll0 = panelEl.scrollTop;
+}, { passive: true });
+panelEl.addEventListener('touchend', e => {
+  if (touchY0 == null) return;
+  const dy = e.changedTouches[0].clientY - touchY0;
+  touchY0 = null;
+  if (appEl.classList.contains('st-empty') || panelEl.classList.contains('iso-open')) return;
+  if (dy < -40 && sheetState === 'peek') setSheet('full');
+  else if (dy > 50 && sheetState === 'full' && touchScroll0 <= 0 && panelEl.scrollTop <= 0) setSheet('peek');
+}, { passive: true });
+new ResizeObserver(setSheetVar).observe(panelEl);
+MQ_MOBILE.addEventListener('change', () => {
+  if (locateCtl) locateCtl.setPosition(isMobile() ? 'topright' : 'topleft');
+  setSheetVar();
+  if (map) map.invalidateSize();
 });
 
 loadStops().then(() => {
   indexStops();
   initMap();
+  updateSheet();
+  setSheetVar();
   setLoading('data', null);
   renderDataInfo();
-  if (location.hash.length > 1) applyState();
+  if (location.hash.length > 1) applyState(); else showEmpty();
   window.addEventListener('popstate', applyState);
 });
 </script>
