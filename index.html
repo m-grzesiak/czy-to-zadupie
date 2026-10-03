@@ -1755,14 +1755,19 @@ const clickIcon = L.divIcon({
   iconAnchor: [13, 36],
 });
 
-// Przyciski + − (na telefonie w prawym dolnym rogu, nad arkuszem). Przybliżają wokół środka WIDOCZNEJ
-// części mapy, a nie całego kontenera — na telefonie dolną część mapy zasłania arkusz.
+// Przyciski + − (na telefonie w prawym dolnym rogu, nad arkuszem). Przybliżają wokół wybranego miejsca,
+// a bez niego wokół środka WIDOCZNEJ części mapy (na telefonie dolną część mapy zasłania arkusz).
 let zoomCtl = null;
 function zoomVisible(d) {
   const s = map.getSize(), top = topUi(), h = Math.max(40, s.y - top - sheetPx());
   const z0 = map.getZoom();   // po dopasowaniu zasięgu przybliżenie bywa ułamkowe: + − wracają do pełnych poziomów
   const z = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), d > 0 ? Math.floor(z0 + 1e-6) + 1 : Math.ceil(z0 - 1e-6) - 1));
-  if (z !== map.getZoom()) map.setZoomAround(L.point(s.x / 2, top + h / 2), z);
+  if (z === z0) return;
+  // wybrane miejsce (okrąg, przystanek, start zasięgu) widać na mapie: przybliżamy wokół niego, zostaje w tym samym miejscu ekranu;
+  // inaczej wokół środka widocznej części mapy
+  const o = isoOrigin();
+  if (o && viewBounds().contains([o.lat, o.lon])) map.setZoomAround(L.latLng(o.lat, o.lon), z);
+  else map.setZoomAround(L.point(s.x / 2, top + h / 2), z);
 }
 const ZoomControl = L.Control.extend({
   options: { position: 'topleft' },
