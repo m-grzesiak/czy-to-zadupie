@@ -31,6 +31,7 @@ Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą ob
 | `download_walk.sh` | pobieranie sieci pieszej z OpenStreetMap (zapytanie Overpass jest w środku) | nie |
 | `GTFS_KRK_*.zip` / `GTFS_KRK_*/` | surowe rozkłady ZTP | nie |
 | `ald-gtfs.zip` | surowy rozkład autobusów Kolei Małopolskich (Małopolskie Linie Dowozowe) | nie |
+| `kml-ska-gtfs.zip` | surowy rozkład pociągów Kolei Małopolskich (SKA1–3 i pociągi nazwane) | nie |
 | `walk_osm/` | surowa sieć ulic z OSM (~95 MB) | nie |
 
 ## Wymagania
@@ -50,19 +51,21 @@ curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip
 curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip
 curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_M.zip
 curl -o ald-gtfs.zip "https://gtfs.kolejemalopolskie.com.pl/?download=L2hvbWUvYnByb2cvcm96a2xhZHlfamF6ZHkvYWxkLWd0ZnMuemlw"
+curl -o kml-ska-gtfs.zip "https://gtfs.kolejemalopolskie.com.pl/?download=L2hvbWUvYnByb2cvcm96a2xhZHlfamF6ZHkva21sLXNrYS1ndGZzLnppcA%3D%3D"
 ```
 
 - **A:** autobusy MPK (miasto i gminy ościenne).
 - **T:** tramwaje.
 - **M:** autobusy Mobilis.
 - **ald-gtfs:** autobusy Kolei Małopolskich (Małopolskie Linie Dowozowe, linie A1…A74) — na https://gtfs.kolejemalopolskie.com.pl/ plik „mld-gtfs.zip” w sekcji „Rozkłady Handlowe” (nie `GTFS.zip` z sekcji MLD, to dane do pozycji na żywo). Wiele linii jedzie daleko poza Kraków; na mapę trafia tylko odcinek w obszarze mapy. Feed nie ma `shapes.txt`, więc trasy tych linii to proste odcinki między przystankami.
+- **kml-ska-gtfs:** pociągi Kolei Małopolskich — plik „kml-ska-gtfs.zip” z tej samej sekcji. W danych nie ma numerów linii, więc skrypt rozpoznaje SKA1, SKA2 i SKA3 po stacjach, przez które jedzie kurs; pociągi nazwane (Dunajec, Hubal, Luxtorpeda…) mają nazwę zamiast numeru, a autobusy zastępcze (ZKA) są pomijane. Pociągów Polregio i PKP Intercity nie ma w tych danych.
 
 Aktualną listę plików znajdziesz na https://gtfs.ztp.krakow.pl/ i https://gtfs.kolejemalopolskie.com.pl/.
 
 ### 2. Wygeneruj przystanki, trasy i rozkład
 
 ```
-python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip ald-gtfs.zip -o stops_data.json
+python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip ald-gtfs.zip kml-ska-gtfs.zip -o stops_data.json
 ```
 
 Skrypt przyjmuje pliki ZIP albo rozpakowane katalogi (np. `GTFS_KRK_A`). Trwa ok. 10 s. Na końcu wypisuje podsumowanie, które warto sprawdzić:
@@ -70,9 +73,11 @@ Skrypt przyjmuje pliki ZIP albo rozpakowane katalogi (np. `GTFS_KRK_A`). Trwa ok
 ```
   ald-gtfs.zip: 2877 przystanków poza obszarem mapy pominięto
   ald-gtfs.zip: 548 przystanków dostało nazwę przystanku ZTP w tym samym miejscu
-Połączenia: 75 plików w conns/ (16.1 MB), profil 0: 231,807, profil 1: 217,234, ...
-Zapisano 5365 przystanków, 23 linii tramwajowych, 223 autobusowych do stops_data.json (2.3 MB)
-Odjazdy: 342 plików w deps/ (4.0 MB), 14 dni od 2026-10-03, 5 różnych profili dnia
+  kml-ska-gtfs.zip: 79 przystanków poza obszarem mapy pominięto
+  profile dni: 12 → 6 (te same odjazdy)
+Połączenia: 96 plików w conns/ (20.1 MB), profil 0: 234,529, profil 1: 219,969, ...
+Zapisano 5426 przystanków, 23 linii tramwajowych, 223 autobusowych, 8 kolejowych do stops_data.json (2.3 MB)
+Odjazdy: 347 plików w deps/ (4.1 MB), 14 dni od 2026-10-03, 6 różnych profili dnia
 ```
 
 Przydatne opcje:
@@ -107,7 +112,7 @@ Trwa ok. 15 s. Sprawdź w podsumowaniu, czy wszystkie przystanki zostały przykl
 
 ```
 Zapisano transfers.bin: 33,606 przesiadek pieszych do 500 m (0.2 MB)
-Zapisano walk.bin: 227,382 węzłów, 284,364 krawędzi, ... (6.9 MB). Przystanki przyklejone: 5365/5365
+Zapisano walk.bin: 227,382 węzłów, 284,364 krawędzi, ... (6.9 MB). Przystanki przyklejone: 5426/5426
 ```
 
 Jeśli pominiesz ten krok, strona dalej działa, ale mapa zasięgu liczy dojścia w przybliżeniu (linia prosta × 1,3) i pisze o tym pod legendą.
@@ -139,7 +144,8 @@ Strona wczytuje dane ścieżkami względnymi, więc działa też pod podkatalogi
 cd ~/Projects/mapa
 curl -O https://gtfs.ztp.krakow.pl/GTFS_KRK_A.zip -O https://gtfs.ztp.krakow.pl/GTFS_KRK_T.zip -O https://gtfs.ztp.krakow.pl/GTFS_KRK_M.zip
 curl -o ald-gtfs.zip "https://gtfs.kolejemalopolskie.com.pl/?download=L2hvbWUvYnByb2cvcm96a2xhZHlfamF6ZHkvYWxkLWd0ZnMuemlw"
-python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip ald-gtfs.zip -o stops_data.json
+curl -o kml-ska-gtfs.zip "https://gtfs.kolejemalopolskie.com.pl/?download=L2hvbWUvYnByb2cvcm96a2xhZHlfamF6ZHkva21sLXNrYS1ndGZzLnppcA%3D%3D"
+python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip ald-gtfs.zip kml-ska-gtfs.zip -o stops_data.json
 python3 build_walk_graph.py stops_data.json walk_osm/*.json -o walk.bin
 ```
 

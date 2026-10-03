@@ -11,12 +11,13 @@ Skąd wziąć dane:
     GTFS_KRK_A.zip  — autobusy (miasto + gminy ościenne)
     GTFS_KRK_T.zip  — tramwaje (z shapes.txt)
     GTFS_KRK_M.zip  — trzeci feed ZTP (autobusy innego operatora/aglomeracyjne)
-  Koleje Małopolskie, https://gtfs.kolejemalopolskie.com.pl/:
-    mld-gtfs.zip    — autobusy Małopolskich Linii Dowozowych (A1…A74)
+  Koleje Małopolskie, https://gtfs.kolejemalopolskie.com.pl/ (sekcja „Rozkłady Handlowe”):
+    ald-gtfs.zip     — autobusy Małopolskich Linii Dowozowych (A1…A74), na stronie „mld-gtfs.zip”
+    kml-ska-gtfs.zip — pociągi Kolei Małopolskich i SKA
 Podaj wszystkie jako argumenty — skrypt scali je w jedną bazę.
 
 Użycie:
-  python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip mld-gtfs.zip -o stops_data.json
+  python3 generate_stops_data.py GTFS_KRK_A.zip GTFS_KRK_T.zip GTFS_KRK_M.zip ald-gtfs.zip kml-ska-gtfs.zip -o stops_data.json
   python3 generate_stops_data.py --inspect GTFS_KRK_T.zip     # podgląd struktury plików
 
 Opcje:
@@ -39,6 +40,7 @@ strona wczytuje go sama przy starcie (przez fetch()).
 
 import csv
 import datetime as dt
+import hashlib
 import io
 import json
 import math
@@ -53,6 +55,8 @@ from pathlib import Path
 # route_type: podstawowe (0 tram, 3 bus, 11 trolejbus) + rozszerzone (9xx tram, 7xx bus, 800 trolejbus)
 TRAM_TYPES = {"0", "5"} | {str(x) for x in range(900, 907)}
 BUS_TYPES = {"3", "11", "800"} | {str(x) for x in range(700, 717)}
+RAIL_TYPES = {"2"} | {str(x) for x in range(100, 118)} | {str(x) for x in range(400, 405)}
+TYPE_ORDER = {"train": 0, "tram": 1, "bus": 2}   # kolejność linii na przystanku
 # obszar mapy = obszar sieci pieszej (download_walk.sh); przystanki spoza niego nie mają ulic do zasięgu
 DEFAULT_BBOX = (49.89, 19.57, 50.26, 20.37)
 
@@ -123,6 +127,8 @@ def iter_csv(zf: zipfile.ZipFile, name: str):
 def feed_mode_hint(source: str):
     """Z nazwy pliku ZTP (GTFS_KRK_T / _A / _M) albo KMŁ (mld-/ald-gtfs) zgadnij tryb, gdyby route_type był nietypowy."""
     base = source.rsplit("/", 1)[-1].upper()
+    if re.match(r"KML-SKA|SKA\b", base) or "KOLEJ" in base or "RAIL" in base or "TRAIN" in base:
+        return "train"
     if re.search(r"_T(\.|_|$)", base) or "TRAM" in base:
         return "tram"
     if re.search(r"_[AM](\.|_|$)", base) or "BUS" in base or re.match(r"(MLD|ALD)\b", base):
@@ -143,15 +149,56 @@ def display_stop_name(n: str) -> str:
     return re.sub(r"\s+\d{1,2}$", "", n).strip() or n
 
 
+def polish_title(n: str) -> str:
+    """„KRAKÓW GŁÓWNY” → „Kraków Główny” (rozkład kolejowy KMŁ ma nazwy stacji wielkimi literami)."""
+    return n.title() if n.isupper() else n
+
+
+# Linie kolejowe KMŁ: w GTFS route_id to tylko rodzaj pociągu („KML”, „DUNAJEC”), bez SKA1/2/3, i bez kierunków.
+# Linię kursu rozpoznajemy po stacjach w obszarze mapy (gałęzie z Krakowa Głównego), zgodnie z opisem linii KMŁ:
+#   SKA1 Kraków Lotnisko – Wieliczka Rynek-Kopalnia,
+#   SKA2 Sędziszów / Miechów – Kraków – Skawina – Oświęcim (i kursy do Krakowa Nowej Huty przez Batowice),
+#   SKA3 Tarnów – Kraków – Trzebinia – Oświęcim (przez Krzeszowice).
+# Pociągi nazwane (Dunajec, Hubal, Luxtorpeda…) mają nazwę jako numer linii, ZKA (autobusy zastępcze) pomijamy.
+KML_BRANCHES = {
+    "SKA3": {"PODŁĘŻE", "KŁAJ", "STANIĄTKI", "KRZESZOWICE", "RUDAWA", "ZABIERZÓW", "ZABIERZÓW RZĄSKA"},
+    "SKA2": {"SŁOMNIKI", "SŁOMNIKI MIASTO", "ZASTÓW", "BARANÓWKA", "SKAWINA", "SKAWINA ZACHODNIA", "SKAWINA JAGIELNIA", "KRAKÓW NOWA HUTA"},
+    "SKA1": {"KRAKÓW LOTNISKO", "WIELICZKA RYNEK-KOPALNIA", "WIELICZKA PARK", "WIELICZKA BOGUCICE"},
+}
+
+
+KML_LINE_NAMES = {
+    "SKA1": "Kraków Lotnisko – Wieliczka Rynek-Kopalnia",
+    "SKA2": "Sędziszów – Kraków Główny – Oświęcim",
+    "SKA3": "Tarnów – Kraków Główny – Oświęcim",
+}
+
+
+def kml_train_ref(route_name: str, stations):
+    """Numer linii kursu pociągu KMŁ z rodzaju pociągu i stacji w obszarze; None = pomiń (autobus zastępczy)."""
+    rn = (route_name or "").strip()
+    if "ZKA" in rn.upper():
+        return None
+    if rn.upper() not in ("KML", "KMŁ", ""):
+        return polish_title(rn)
+    st = {x.upper() for x in stations}
+    for ref in ("SKA3", "SKA2", "SKA1"):   # SKA3 przed SKA2: Tarnów–Nowa Huta–Kraków to SKA3
+        if st & KML_BRANCHES[ref]:
+            return ref
+    return "KMŁ"
+
+
 def feed_operator(source: str):
     """Przewoźnik pokazywany przy linii (ZTP / MPK nie — to domyślny). Koleje Małopolskie: MLD / ALD."""
     base = source.rsplit("/", 1)[-1].upper()
-    if re.match(r"(MLD|ALD)\b", base) or "KOLEJE" in base or "KML" in base:
+    if re.match(r"(MLD|ALD|KML|SKA)\b", base) or "KOLEJE" in base:
         return "Koleje Małopolskie"
     return None
 
 
 def route_type_to_mode(route_type: str, hint):
+    if route_type in RAIL_TYPES:
+        return "train"
     if route_type in TRAM_TYPES:
         return "tram"
     if route_type in BUS_TYPES:
@@ -323,8 +370,9 @@ class Merger:
         # stops (te same ID w różnych feedach scalamy, jeśli to ten sam punkt; inaczej prefiks feedu)
         # przystanki innych przewoźników (KMŁ) dostają nazwę przystanku ZTP w tym samym miejscu,
         # żeby na stronie były jednym przystankiem („Kraków AGH/UR” = „AGH / UR”, „Kraków Biskupa Prandoty” = „bp. Prandoty”)
+        rename = op and hint != "train"   # stacje kolejowe zostają z własnymi nazwami („Kraków Główny”)
         ztp_grid = defaultdict(list)
-        if op:
+        if rename:
             for g, st in self.stops.items():
                 ztp_grid[(round(st["lat"] / 0.002), round(st["lon"] / 0.003))].append(st)
         renamed = 0
@@ -346,6 +394,7 @@ class Merger:
             return best[1] if best else None
 
         local_to_global = {}
+        raw_names = {}       # stop_id -> nazwa z pliku (do rozpoznania linii kolejowych KMŁ)
         all_names = {}       # stop_id -> nazwa, także przystanków poza obszarem (kierunek kursu)
         outside = set()      # stop_id poza obszarem mapy
         parent_name = {}
@@ -362,12 +411,15 @@ class Merger:
                 continue
             sid = r["stop_id"]
             name = r.get("stop_name") or parent_name.get(r.get("parent_station", ""), "") or sid
-            all_names[sid] = display_stop_name(name) if op else name
+            raw_names[sid] = name
+            if hint == "train":
+                name = polish_title(name)
+            all_names[sid] = display_stop_name(name) if rename else name
             if self.bbox and not (self.bbox[0] <= lat <= self.bbox[2] and self.bbox[1] <= lon <= self.bbox[3]):
                 outside.add(sid)
                 continue
             pole = None
-            if op:
+            if rename:
                 m_pole = re.search(r"\s(\d{2})$", name)   # „Kraków Cło 01” — numer słupka w nazwie
                 pole = m_pole.group(1) if m_pole else None
                 zn = ztp_name(lat, lon, name)
@@ -403,6 +455,8 @@ class Merger:
             trips[t["trip_id"]] = [t["route_id"], t.get("shape_id") or None, d, h, f"{tag}/{t.get('service_id', '')}"]
             if h:
                 headsigns[t["route_id"]][(d, h)] += 1
+        if hint == "train" and op:
+            self._kml_train_lines(zf, trips, routes, headsigns, raw_names, local_to_global, all_names, op)
 
         # shapes
         needed_shapes = {t[1] for t in trips.values() if t[1]}
@@ -494,12 +548,42 @@ class Merger:
         n_days = sum(1 for d in self.dates if any(x.startswith(tag + "/") for x in self.date_services[d]))
         if outside:
             print(f"  {source}: {len(outside)} przystanków poza obszarem mapy pominięto", file=sys.stderr)
-        if op:
+        if rename:
             print(f"  {source}: {renamed} przystanków dostało nazwę przystanku ZTP w tym samym miejscu", file=sys.stderr)
         print(f"  {source}: {len(routes)} linii, {len(self.stops) - n_before} nowych przystanków, "
               f"{len(trips)} kursów, {n_st:,} wierszy stop_times, "
               f"{'shapes.txt' if shape_pts else 'BEZ shapes.txt (trasy z kolejności przystanków)'}, "
               f"rozkład na {n_days}/{len(self.dates)} dni", file=sys.stderr)
+
+    @staticmethod
+    def _kml_train_lines(zf, trips, routes, headsigns, raw_names, local_to_global, all_names, op):
+        """Pociągi KMŁ: kurs → linia (SKA1/2/3 albo nazwa pociągu), kierunek = ostatnia stacja kursu."""
+        stations = defaultdict(list)   # trip_id -> [(seq, stop_id)]
+        for st in iter_csv(zf, "stop_times.txt"):
+            if st.get("trip_id") in trips:
+                try:
+                    stations[st["trip_id"]].append((int(st.get("stop_sequence") or 0), st.get("stop_id")))
+                except ValueError:
+                    pass
+        headsigns.clear()
+        for tid in list(trips):
+            rows = sorted(stations.get(tid, []))
+            if not rows:
+                continue
+            t = trips[tid]
+            inside = [raw_names.get(sid, "") for _, sid in rows if sid in local_to_global]
+            ref = kml_train_ref(routes[t[0]][3] or routes[t[0]][0], inside) if inside else None
+            if ref is None:
+                del trips[tid]
+                continue
+            rid = "line:" + ref
+            if rid not in routes:
+                routes[rid] = (ref, "train", None, KML_LINE_NAMES.get(ref, ""), op)
+            t[0] = rid
+            if not t[3]:
+                t[3] = all_names.get(rows[-1][1], "")
+            if t[3]:
+                headsigns[rid][(t[2], t[3])] += 1
 
     @staticmethod
     def _pattern_stops(rid, counter, reps):
@@ -650,7 +734,7 @@ class Merger:
         for gid, s in self.stops.items():
             lines = list(self.stop_lines.get(gid, {}).values())
             if lines:
-                lines.sort(key=lambda l: (l["type"] != "tram", [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", l["ref"])]))
+                lines.sort(key=lambda l: (TYPE_ORDER.get(l["type"], 9), [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", l["ref"])]))
                 stops_out.append({**s, "lines": lines})
         # częstotliwość (do mapy zasięgu): kursy wariantu z pierwszego przystanku w typowy
         # dzień roboczy (wt–czw) między 6:00 a 20:00 -> średni odstęp w minutach
@@ -706,6 +790,32 @@ class Merger:
         prof_list = [None] * len(profiles)
         for k, i in profiles.items():
             prof_list[i] = k
+
+        # Profile o tej samej treści scalamy. KMŁ (pociągi) daje każdemu kursowi własny service_id na konkretne
+        # daty, więc np. dwa zwykłe poniedziałki mają różne zestawy service_id, choć te same odjazdy.
+        # Treść = wszystkie odjazdy (deps) i połączenia (csa) aktywne w profilu.
+        def content_sig(srvset):
+            h = hashlib.sha1()
+            for key in sorted(self.deps):
+                mins = sorted(m for srv, ms in self.deps[key].items() if srv in srvset for m in ms)
+                if mins:
+                    h.update(repr((key, mins)).encode())
+            trips_sig = sorted(repr((lk, hd, g, a, d)) for (srv, lk, hd, g, a, d) in self.csa_trips if srv in srvset)
+            for t in trips_sig:
+                h.update(t.encode())
+            return h.hexdigest()
+        if len(prof_list) > 1:
+            sig_idx, remap, merged = {}, {}, []
+            for i, srvset in enumerate(prof_list):
+                sg = content_sig(srvset)
+                if sg not in sig_idx:
+                    sig_idx[sg] = len(merged)
+                    merged.append(srvset)
+                remap[i] = sig_idx[sg]
+            if len(merged) < len(prof_list):
+                print(f"  profile dni: {len(prof_list)} → {len(merged)} (te same odjazdy)", file=sys.stderr)
+                date_profile = {d: remap[p] for d, p in date_profile.items()}
+                prof_list = merged
 
         cells = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for (gid, lkey, h), by_srv in self.deps.items():
@@ -838,8 +948,9 @@ def main():
 
     n_tram = sum(1 for r in res["routes"].values() if r["type"] == "tram")
     n_bus = sum(1 for r in res["routes"].values() if r["type"] == "bus")
+    n_train = sum(1 for r in res["routes"].values() if r["type"] == "train")
     n_prof = len(set(res["meta"]["calendar"].values()))
-    print(f"Zapisano {len(res['stops'])} przystanków, {n_tram} linii tramwajowych, {n_bus} autobusowych "
+    print(f"Zapisano {len(res['stops'])} przystanków, {n_tram} linii tramwajowych, {n_bus} autobusowych, {n_train} kolejowych "
           f"do {out_path} ({len(text.encode()) / 1e6:.1f} MB)", file=sys.stderr)
     print(f"Odjazdy: {len(cells)} plików w {deps_dir}/ ({total / 1e6:.1f} MB), "
           f"{len(res['meta']['calendar'])} dni od {start}, {n_prof} różnych profili dnia", file=sys.stderr)

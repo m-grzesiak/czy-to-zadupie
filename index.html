@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Czy to zadupie? — dojazdy komunikacją w Krakowie</title>
-<meta name="description" content="Kliknij miejsce w Krakowie i okolicy, a zobaczysz, jak stąd dojedziesz tramwajem i autobusem: linie w pobliżu, co ile jeżdżą, czasy dojazdu i mapę zasięgu.">
+<meta name="description" content="Kliknij miejsce w Krakowie i okolicy, a zobaczysz, jak stąd dojedziesz tramwajem, autobusem i pociągiem: linie w pobliżu, co ile jeżdżą, czasy dojazdu i mapę zasięgu.">
 <meta property="og:title" content="Czy to zadupie?">
 <meta property="og:description" content="Sprawdź, jak z danego miejsca w Krakowie dojedziesz komunikacją miejską.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -20,6 +20,8 @@
     --tram-bg:#f7e6e4;
     --bus:#2a5f74;
     --bus-bg:#e2edf0;
+    --train:#5a3d8a;
+    --train-bg:#ece6f4;
     --accent:#c98a2c;
   }
   * { box-sizing: border-box; }
@@ -123,6 +125,7 @@
   }
   .badge.tram{ background:var(--tram-bg); color:var(--tram); }
   .badge.bus{ background:var(--bus-bg); color:var(--bus); }
+  .badge.train{ background:var(--train-bg); color:var(--train); }
   .badge{
     cursor:pointer;
     border:2px solid transparent;
@@ -131,6 +134,7 @@
   .badge:hover{ transform:translateY(-1px); }
   .badge.selected.tram{ border-color:var(--tram); }
   .badge.selected.bus{ border-color:var(--bus); }
+  .badge.selected.train{ border-color:var(--train); }
   .route-note{
     font-size:12px;
     color:var(--ink-soft);
@@ -484,6 +488,7 @@
   }
   .sh-chips .t{ background:var(--tram-bg); color:var(--tram); }
   .sh-chips .b{ background:var(--bus-bg); color:var(--bus); }
+  .sh-chips .k{ background:var(--train-bg); color:var(--train); }
   .sh-chips .more{ background:transparent; color:var(--ink-soft); font-weight:600; }
   @keyframes sh-pop{ from{ transform:translate(-50%,-50%) scale(.3); opacity:0; } to{ transform:translate(-50%,-50%) scale(1); opacity:1; } }
   @keyframes sh-pulse{
@@ -553,6 +558,7 @@
   }
   .dest .dl span.t, .tb-lines span.t{ background:var(--tram-bg); color:var(--tram); }
   .dest .dl span.b, .tb-lines span.b{ background:var(--bus-bg); color:var(--bus); }
+  .dest .dl span.k, .tb-lines span.k{ background:var(--train-bg); color:var(--train); font-size:10.5px; font-weight:700; line-height:16px; padding:0 4px; border-radius:4px; min-width:18px; text-align:center; }
   .dest .del{
     font:inherit; font-size:14px; line-height:1; border:0; background:none; color:var(--ink-soft); cursor:pointer; padding:0 2px; margin-left:4px;
   }
@@ -617,6 +623,7 @@
   }
   .ld-num.tram{ background:var(--tram); }
   .ld-num.bus{ background:var(--bus); }
+  .ld-num.train{ background:var(--train); }
   .ld-ttl{ flex:1; min-width:0; }
   .ld-kind{ font-size:12px; color:var(--ink-soft); }
   .ld-close{
@@ -826,7 +833,7 @@
 
       <div id="results">
         <div class="empty-state">
-          <p class="es-lead"><span class="es-desk">Kliknij dowolne miejsce albo przystanek</span><span class="es-mob">Pokażę, jak stamtąd dojedziesz tramwajem i autobusem — i czy to zadupie</span>.</p>
+          <p class="es-lead"><span class="es-desk">Kliknij dowolne miejsce albo przystanek</span><span class="es-mob">Pokażę, jak stamtąd dojedziesz tramwajem, autobusem i pociągiem — i czy to zadupie</span>.</p>
           <button type="button" class="es-locate" data-locate="1">
             <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="9" r="5.2"/><circle cx="9" cy="9" r="1.8" fill="currentColor" stroke="none"/><path d="M9 1v2.6M9 14.4V17M1 9h2.6M14.4 9H17" stroke-linecap="round"/></svg>
             Sprawdź, gdzie jestem</button>
@@ -1147,7 +1154,7 @@ function buildRouteStops(route, key, interactive) {
 }
 
 function routeColor(route) {
-  return route.color ? ('#' + route.color.replace(/^#/, '')) : (route.type === 'tram' ? '#a8322d' : '#2a5f74');
+  return route.color ? ('#' + route.color.replace(/^#/, '')) : (route.type === 'tram' ? '#a8322d' : route.type === 'train' ? '#5a3d8a' : '#2a5f74');
 }
 
 // Podgląd trasy po najechaniu na numer linii (bez przybliżania mapy)
@@ -1214,7 +1221,7 @@ function drawRoute(key) {
   routeStopsLayer = st.layer.addTo(map);
   routeStopMarkers = st.markers;
   styleVariants();
-  routeStatus.textContent = `Trasa linii ${route.ref} (${route.type === 'tram' ? 'tramwaj' : 'autobus'})`
+  routeStatus.textContent = `Trasa linii ${route.ref} (${(TYPE_NAME[route.type] || 'Autobus').toLowerCase()})`
     + (route.name ? `: ${route.name}` : '')
     + (route.shapes.length > 1 ? ` — ${route.shapes.length} warianty/kierunki.` : '.');
 
@@ -1586,7 +1593,7 @@ function renderLineDetail() {
   const trips = route.trips || [];
   if (!trips[selectedVariant]) selectedVariant = Math.max(0, trips.findIndex(Boolean));
   const t = trips[selectedVariant];
-  const kind = route.type === 'tram' ? 'Tramwaj' : 'Autobus';
+  const kind = TYPE_NAME[route.type] || 'Autobus';
   const hw = isNight(key) ? 'linia nocna' : hwText(key, placeStats);
 
   let html = `<div class="ld-head"><span class="ld-num ${route.type}">${esc(route.ref)}</span>
@@ -1845,16 +1852,25 @@ function stopScale() { const z = map ? map.getZoom() : 14; return (z >= 16 ? 1.3
 // Przystanek = biała kropka z obwódką w kolorze tego, co tam jeździ (tramwaj / autobus; oba = tramwajowa).
 // Biały środek i ciemna, nasycona obwódka odcinają się od każdego tła mapy (zabudowa, drogi, zieleń),
 // a kolor od razu mówi, czy to przystanek tramwajowy. Przy zasięgu kropki są przygaszone.
-const STOP_TRAM = '#a8322d', STOP_BUS = '#2a5f74';
+const STOP_TRAM = '#a8322d', STOP_BUS = '#2a5f74', STOP_TRAIN = '#5a3d8a';
+const STOP_COLOR = { tram: STOP_TRAM, bus: STOP_BUS, train: STOP_TRAIN };
+// rodzaje transportu: kolejność w listach (pociągi, tramwaje, autobusy), nazwy i klasy chipów
+const TYPE_ORDER = { train: 0, tram: 1, bus: 2 };
+const TYPE_NAME = { tram: 'Tramwaj', bus: 'Autobus', train: 'Pociąg' };
+const TYPE_CHIP = { tram: 't', bus: 'b', train: 'k' };
+const typeCmp = (a, b) => (TYPE_ORDER[a] ?? 9) - (TYPE_ORDER[b] ?? 9);
+// stacja kolejowa ma pierwszeństwo, potem przystanek tramwajowy
 function stopKind(s) {
-  if (s._kind === undefined) s._kind = s.lines.some(l => l.type === 'tram') ? 'tram' : 'bus';
+  if (s._kind === undefined) s._kind = s.lines.some(l => l.type === 'train') ? 'train' : s.lines.some(l => l.type === 'tram') ? 'tram' : 'bus';
   return s._kind;
 }
 function baseStopStyle(s) {
   const k = stopScale();
   // przy zasięgu albo wybranej linii pozostałe przystanki schodzą na drugi plan (przystanki linii mają własne kółka)
   if (iso || selectedRouteKey) return { radius: 2.6 * k, weight: 1, color: '#9d998d', fillColor: '#f4f2ec', fillOpacity: 0.8, opacity: 0.7, dashArray: null };
-  return { radius: 3.4 * k, weight: Math.max(1.3, 2 * k), color: s && stopKind(s) === 'tram' ? STOP_TRAM : STOP_BUS,
+  const kind = s ? stopKind(s) : 'bus';
+  // stacja kolejowa trochę większa i z grubszą obwódką — widać ją między przystankami
+  return { radius: (kind === 'train' ? 4.6 : 3.4) * k, weight: Math.max(1.3, (kind === 'train' ? 2.6 : 2) * k), color: STOP_COLOR[kind] || STOP_BUS,
            fillColor: '#ffffff', fillOpacity: 1, opacity: 0.95, dashArray: null };
 }
 function restyleStops() { highlightStops(hlIds, hlUnreach); }
@@ -1881,7 +1897,8 @@ function initMap() {
     options: { position: 'bottomleft' },
     onAdd() {
       const el = L.DomUtil.create('div', 'stop-legend');
-      el.innerHTML = `<span><i style="border-color:${STOP_TRAM}"></i>tramwaj</span><span><i style="border-color:${STOP_BUS}"></i>autobus</span>`;
+      el.innerHTML = `<span><i style="border-color:${STOP_TRAM}"></i>tramwaj</span><span><i style="border-color:${STOP_BUS}"></i>autobus</span>`
+        + (STOPS.some(st => st.lines.some(l => l.type === 'train')) ? `<span><i style="border-color:${STOP_TRAIN}"></i>kolej</span>` : '');
       L.DomEvent.disableClickPropagation(el);
       return el;
     },
@@ -1976,24 +1993,24 @@ function showStopHover(s) {
   hideStopHover();
   if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
   stopHoverOn = true;
-  const hasTram = s.lines.some(l => l.type === 'tram');
-  const hasBus = s.lines.some(l => l.type === 'bus');
-  const c = hasTram && !hasBus ? 'var(--tram)' : hasBus && !hasTram ? 'var(--bus)' : 'var(--accent)';
+  const kinds = new Set(s.lines.map(l => l.type));
+  const c = kinds.size === 1 ? `var(--${[...kinds][0]})` : 'var(--accent)';
 
   // wszystkie słupki tej nazwy w pobliżu — linie i podświetlenie
   const sibs = STOPS.filter(x => x.name === s.name && x.id !== s.id && haversineMeters(s.lat, s.lon, x.lat, x.lon) <= 400);
   const lines = new Map();
   [s, ...sibs].forEach(x => x.lines.forEach(l => lines.set(`${l.ref}|${l.type}`, l)));
   const sorted = [...lines.values()].sort((a, b) =>
-    (a.type !== b.type ? (a.type === 'tram' ? -1 : 1) : a.ref.localeCompare(b.ref, 'pl', { numeric: true })));
-  // tramwaje i autobusy w osobnych rzędach; przy dużych węzłach ucinamy każdą grupę osobno
+    (a.type !== b.type ? typeCmp(a.type, b.type) : a.ref.localeCompare(b.ref, 'pl', { numeric: true })));
+  // pociągi, tramwaje i autobusy w osobnych rzędach; przy dużych węzłach ucinamy każdą grupę osobno
   const MAX = 16;
   const group = (arr, cls) => arr.length ? '<div class="sh-chips">' +
     arr.slice(0, MAX).map(l => `<span class="${cls}">${esc(l.ref)}</span>`).join('') +
     (arr.length > MAX ? `<span class="more">+${arr.length - MAX}</span>` : '') + '</div>' : '';
-  const chips = group(sorted.filter(l => l.type === 'tram'), 't') + group(sorted.filter(l => l.type !== 'tram'), 'b');
-  const nT = sorted.filter(l => l.type === 'tram').length, nB = sorted.length - nT;
-  const meta = [nT && `${nT} tram.`, nB && `${nB} aut.`].filter(Boolean).join(' · ');
+  const chips = group(sorted.filter(l => l.type === 'train'), 'k') + group(sorted.filter(l => l.type === 'tram'), 't')
+    + group(sorted.filter(l => l.type !== 'tram' && l.type !== 'train'), 'b');
+  const nK = sorted.filter(l => l.type === 'train').length, nT = sorted.filter(l => l.type === 'tram').length, nB = sorted.length - nT - nK;
+  const meta = [nK && `${nK} kol.`, nT && `${nT} tram.`, nB && `${nB} aut.`].filter(Boolean).join(' · ');
 
   const cp = map.latLngToContainerPoint([s.lat, s.lon]), mw = map.getSize().x;
   const below = cp.y < 150;
@@ -3333,7 +3350,7 @@ function highlightStops(ids, unreach = new Set()) {
   hlIds = ids; hlUnreach = unreach;
   routeStopMarkers.forEach(({ m, s }) => m.setStyle({ fillColor: ids.has(s.id) && !unreach.has(s.id) ? '#f0b862' : '#fff' }));
   const k = Math.max(stopScale(), 0.75);
-  const bases = { tram: baseStopStyle({ _kind: 'tram' }), bus: baseStopStyle({ _kind: 'bus' }) };
+  const bases = { tram: baseStopStyle({ _kind: 'tram' }), bus: baseStopStyle({ _kind: 'bus' }), train: baseStopStyle({ _kind: 'train' }) };
   const un = { color: '#6f6a5e', fillColor: '#ffffff', radius: 6 * k, weight: 2.5, dashArray: '3 2', fillOpacity: 1, opacity: 1 };
   const on = { color: '#c98a2c', fillColor: '#f0b862', radius: 6 * k, weight: 2, dashArray: null, fillOpacity: 1, opacity: 1 };
   stopMarkers.forEach((m, i) => {
@@ -3378,7 +3395,8 @@ const nightCache = new Map();
 function isNight(key) {
   if (!nightCache.has(key)) {
     const r = ROUTES[key];
-    nightCache.set(key, !!(r && r.trips && r.trips.length && !r.trips.some(t => t && (t.hw || t.hwS || t.hwN))));
+    // pociągi nie są liniami nocnymi, nawet gdy jeżdżą rzadko (pociąg nazwany 1–2 razy dziennie)
+    nightCache.set(key, !!(r && r.type !== 'train' && r.trips && r.trips.length && !r.trips.some(t => t && (t.hw || t.hwS || t.hwN))));
   }
   return nightCache.get(key);
 }
@@ -3408,12 +3426,16 @@ function badgesHtml(stops, reach = null, stats = null) {
     return `<span class="badge ${l.type}${off ? ' unreach' : ''}${night ? ' night' : ''}${hw === 'nie kursuje' ? ' off' : ''}" role="button" tabindex="0" data-key="${esc(key)}" title="${esc(title)}">`
       + `${esc(l.ref)}${hw ? `<span class="hw">${hw}</span>` : ''}</span>`;
   };
-  const sortRef = (a, b) => (a.split('|')[1] !== b.split('|')[1] ? (a.endsWith('|tram') ? -1 : 1) : a.localeCompare(b, 'pl', { numeric: true }));
+  // pociągi: najpierw linie SKA, potem pociągi nazwane
+  const ska = k => (k.endsWith('|train') && !/^SKA/.test(k) ? 1 : 0);
+  const sortRef = (a, b) => (a.split('|')[1] !== b.split('|')[1] ? typeCmp(a.split('|')[1], b.split('|')[1])
+    : ska(a) - ska(b) || a.localeCompare(b, 'pl', { numeric: true }));
   const keys = [...lines.keys()].sort(sortRef);
   const day = keys.filter(k => !isNight(k)), night = keys.filter(isNight);
   const group = (label, ks) => ks.length
     ? `<div class="group-label">${label}</div><div class="badges">${ks.map(badge).join('')}</div>` : '';
-  const html = group('Tramwaje', day.filter(k => k.endsWith('|tram'))) + group('Autobusy', day.filter(k => !k.endsWith('|tram')))
+  const html = group('Pociągi', day.filter(k => k.endsWith('|train'))) + group('Tramwaje', day.filter(k => k.endsWith('|tram')))
+    + group('Autobusy', day.filter(k => !k.endsWith('|tram') && !k.endsWith('|train')))
     + group('Nocne', night)
     + (stats && day.length ? `<div class="muted hw-note">Przy numerze: średnio co ile minut odjeżdża ${dayWord}, w godz. 6–20.</div>` : '');
   return { html, count: day.length, night: night.length };
@@ -3923,7 +3945,7 @@ function nightCount() {
 function linesChips(lines) {
   const seen = new Set();
   return lines.filter(l => { const k = l.ref + '|' + l.type; if (seen.has(k)) return false; seen.add(k); return true; })
-    .map(l => `<span class="${l.type === 'tram' ? 't' : 'b'}">${esc(l.ref)}</span>`).join('');
+    .map(l => `<span class="${TYPE_CHIP[l.type] || 'b'}">${esc(l.ref)}</span>`).join('');
 }
 function routeSummary(r) {
   if (!r || !isFinite(r.t)) return '';

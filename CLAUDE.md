@@ -4,7 +4,7 @@ Kontekst dla asystenta pracującego nad tym projektem. Instrukcja aktualizacji d
 
 ## Co to jest
 
-Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami i autobusami Kolei Małopolskich (MLD) (bez serwera i bazy), jeden plik `index.html` z Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` kopiuje stronę i dane do `public/`; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny.
+Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy), jeden plik `index.html` z Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` kopiuje stronę i dane do `public/`; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny.
 
 Funkcje:
 - **Klik w punkt:** linie w promieniu (suwak 200–2000 m, domyślnie 500 m) i lista przystanków w okręgu, posortowana po dojściu pieszym. Promień dotyczy tylko listy linii — zasięg i dojazdy liczą chodzenie po ulicach bez limitu okręgu. Gdy w okręgu nie ma przystanku: 3 najbliższe (`nearestOutside`) i przycisk powiększenia promienia.
@@ -12,6 +12,7 @@ Funkcje:
   - najbliższy przystanek (pieszo), kursy na godzinę w jedną stronę (suma linii dziennych, 6–20), najczęstsza linia, pierwszy i ostatni kurs dzienny, liczba linii nocnych — z `lineStats` (deps/ dla reprezentatywnego dnia `repDate`),
   - czasy dojazdu do stałych celów `DESTS` i „Moich miejsc” (`localStorage` `mapa.mojeMiejsca`), model „typowy dzień”,
   - typ dnia (`#day-type`, domyślnie dzień roboczy) jest wspólny z częstotliwością i zasięgiem „typowy dzień” (`setDayType`).
+- **Rodzaje transportu:** `tram`, `bus`, `train` (`TYPE_ORDER` / `TYPE_NAME` / `TYPE_CHIP`, kolor `--train #5a3d8a`, `STOP_TRAIN`); stacja kolejowa to większa kropka (`stopKind`: train > tram > bus), legenda „kolej” tylko gdy w danych są pociągi; w liście linii grupa „Pociągi” przed tramwajami, najpierw SKA, potem pociągi nazwane; pociągi nigdy nie są „nocne”.
 - **Linie:** nocne w osobnej grupie (`isNight`: żaden wariant nie ma `hw*`, w danych ZTP to 6xx, 9xx, 62, 69) i poza licznikiem w tytule; przy numerze „co X min” (`hwText`, odstęp z najczęściej obsługiwanego słupka w 6–20).
 - **Cel podróży** (`target`, `setTarget`, `renderTargetBox`, `drawTarget`): klik na mapie lub w przystanek w trybie zasięgu albo po „Wskaż własny cel”, wiersz listy celów, link `cel=`. Trasa z `routeTo` (kontekst `iso`, jeśli włączony, inaczej `reach`), czas przy pinezce. „Zapisz jako moje miejsce”, „Sprawdź to miejsce” (`targetAsOrigin`: cel staje się startem, zasięg zostaje; cel-przystanek otwiera się jako przystanek, `target.stopId`).
   - **Dymek przy celu** (`renderTargetPop`, `targetPopOn`): po kliknięciu w mapę lub przystanek pokazuje czas, linię / przesiadki i przycisk „Sprawdź to miejsce” (nowy start jednym kliknięciem). × zamyka dymek, cel zostaje. Cel z listy celów albo z linku (`cel=`) jest bez dymka. Karta hovera nie pokazuje się w promieniu 90 px od otwartego dymka.
@@ -55,6 +56,7 @@ Funkcje:
 | `build_walk_graph.py` | OSM (Overpass JSON albo `.osm.pbf` przez pyosmium) → `walk.bin` + pole `w` w przystankach |
 | `download_walk.sh` | pobiera sieć pieszą z Overpass w 12 kawałkach do `walk_osm/` |
 | `ald-gtfs.zip` | GTFS autobusów Kolei Małopolskich (lokalnie, w `.gitignore`) |
+| `kml-ska-gtfs.zip` | GTFS pociągów Kolei Małopolskich (lokalnie, w `.gitignore`) |
 
 Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierwszy nadpisuje `stops_data.json` i gubi pole `w`, czyli przypisanie przystanku do węzła sieci ulic.
 
@@ -74,6 +76,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
   - brak `shapes.txt` → trasy to odcinki między przystankami, brak `direction_id` → nazwa linii z dwóch najczęstszych kierunków,
   - kalendarz w `calendar.txt` (dni tygodnia), `stop_code` to numery KMŁ (np. „900”), nie słupki — `c` tylko z końcówki nazwy („Kraków Cło 01” → „01”),
   - większość linii wyjeżdża poza obszar mapy: przystanki poza `--bbox` (domyślnie obszar sieci pieszej) są pomijane, trasy przycięte (`_clip_line`), czasy w `trips[].s` liczone od pierwszego przystanku w obszarze, połączenia CSA tylko między przystankami w obszarze,
+  - pociągi (`kml-ska-gtfs.zip`, tryb `train`, `RAIL_TYPES`): `route_id` to rodzaj pociągu („KML”, „DUNAJEC”…), bez numerów linii i kierunków. `_kml_train_lines` przypisuje kurs do linii po stacjach w obszarze (`KML_BRANCHES`: SKA1 Lotnisko / Wieliczka, SKA2 Słomniki / Skawina / Nowa Huta, SKA3 Podłęże / Krzeszowice; SKA3 sprawdzane przed SKA2), nazwy linii z `KML_LINE_NAMES`, pociągi nazwane = nazwa (`polish_title`), ZKA pomijane, kierunek = ostatnia stacja kursu. Stacje mają nazwy z pliku zamienione z WIELKICH liter (`polish_title`) i nie są przemianowywane na nazwy ZTP. Każdy kurs ma w kalendarzu własny `service_id` na konkretne daty, więc zestawy `service_id` różnią się z tygodnia na tydzień — profile o tej samej treści (odjazdy + połączenia) scala `content_sig` w `result()` (14 dni: 12 → 6 profili, `conns/` ok. 20 MB),
   - nazwy: przystanek KMŁ dostaje nazwę przystanku ZTP z tą samą nazwą po normalizacji do 150 m albo dowolnego do 50 m (`ztp_name`, `norm_stop_name`: bez „Kraków ”, numeru słupka i interpunkcji), inaczej `display_stop_name` (bez „Kraków ” i numeru słupka) — dzięki temu np. „AGH / UR” to jeden przystanek z liniami ZTP i KMŁ.
 - **OSM:** zapytanie jest w `download_walk.sh`, obszar 49.89–50.26 N, 19.57–20.37 E. Publiczne Overpass bywa przeciążone („too busy”, 406), stąd kawałki, limit czasu i serwery zapasowe.
 
@@ -82,7 +85,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
 - **`stops[]`:** `{id, name, lat, lon, c, lines:[{ref,type}], w:[nodeIdx, snapMeters]}`. Jeden rekord to słupek. Przystanek w UI = słupki o tej samej nazwie w promieniu 400 m. `c` to numer słupka z tablicy ZTP („01”), z `stop_code` („802-01”) albo zapasowo `stop_desc`. Słupki tramwajowy i autobusowy o tym samym numerze to to samo miejsce (jedna etykieta na mapie).
 - **`routes["ref|type"]`:** `{ref, type, color, name, op?, shapes:[[[lat,lon]…]], trips:[{h, s:[[stopId, offMin]], hw}]}`. `op` = przewoźnik spoza ZTP (pokazywany w nagłówku linii). `trips[i]` odpowiada `shapes[i]`. `hw` to średni odstęp kursów (min) w wt–czw 6:00–20:00, używany przez mapę zasięgu.
 - **Warianty:** do 4 najczęstszych (po równo z kierunków), plus dobór rzadkich, aż każdy przystanek linii jest w którymś wariancie. Bez tego rzadkie warianty znikały z trasy, czasów i zasięgu (błąd z linią 235 i Ochodzą Odwiśle).
-- **`meta`:** `{generated, sources:[przewoźnicy], calendar:{"RRRR-MM-DD": profil}, deps:{dlat, dlon, path}, walk:{path, nodes, edges}}`. `sources` trafia do stopki („Rozkład ZTP i Kolei Małopolskich”, `srcGen`). Profil to zestaw aktywnych `service_id`, dni o tym samym zestawie mają wspólny profil.
+- **`meta`:** `{generated, sources:[przewoźnicy], calendar:{"RRRR-MM-DD": profil (profile o tej samej treści scalone)}, deps:{dlat, dlon, path}, walk:{path, nodes, edges}}`. `sources` trafia do stopki („Rozkład ZTP i Kolei Małopolskich”, `srcGen`). Profil to zestaw aktywnych `service_id`, dni o tym samym zestawie mają wspólny profil.
 - **`deps` komórka:** `{stopId: {"ref|type": [{h, t:[[minuty…]…], p:[indeks listy dla profilu]}]}}`. Minuty od północy, mogą przekraczać 1440 (kursy po północy). Identyczne listy są zapisane raz.
 - **`walk.bin`** (little-endian): nagłówek `'WLK1', N, E, G`, potem kolejno:
   - `int32 nodes[2N]` (×1e6),
