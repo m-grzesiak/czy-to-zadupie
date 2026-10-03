@@ -2281,13 +2281,19 @@ function tripIndex() {
 // ile wolniej od najszybszej może jechać linia, żeby i tak wsiąść w pierwszy pojazd, który przyjedzie
 const rideSlack = d => Math.max(3, 0.2 * d);
 
-// Dijkstra po węzłach ulic (0..N-1) i przystankach (N..N+S-1)
+// Dijkstra po węzłach ulic (0..N-1) i przystankach (N..N+S-1).
+// Z przejazdami liczy się na dwóch warstwach: 0 = jeszcze bez przejazdu, 1 = po pierwszym przejeździe.
+// Pierwsze wsiadanie jest bez czekania (z domu wychodzi się na konkretny odjazd), na przesiadkach
+// czeka się średnio (połowa odstępu, wspólne linie). Wynik: tablice dla lepszej warstwy (time, prev…)
+// i pełne warstwy w `L` (ścieżki w walkLegsFrom).
 function walkDijkstra(seeds, T, opts = {}) {
   const W = WALK, N = W.N, S = STOPS.length, M = N + S;
   const G = tripIndex(), trips = G.trips;
-  const time = new Float64Array(M).fill(Infinity);   // Float64: porównanie z kolejką musi być dokładne
-  const prev = new Int32Array(M).fill(-1), kind = new Int8Array(M), via = new Int32Array(M);
-  const rFrom = new Int16Array(M), rTo = new Int16Array(M), rWait = new Float32Array(M), noWalk = new Uint8Array(M);
+  const walkOnly = !!opts.walkOnly, noRide = !!opts.noRide;
+  const NL = walkOnly || noRide ? 1 : 2, MM = NL * M;
+  const time = new Float64Array(MM).fill(Infinity);   // Float64: porównanie z kolejką musi być dokładne
+  const prev = new Int32Array(MM).fill(-1), kind = new Int8Array(MM), via = new Int32Array(MM);
+  const rFrom = new Int16Array(MM), rTo = new Int16Array(MM), rWait = new Float32Array(MM), noWalk = new Uint8Array(MM);
   const heap = new TypedHeap(1 << 16);
   let curWait = 0;
   const relax = (v, t, u, k, x, f, g) => {
@@ -2296,34 +2302,48 @@ function walkDijkstra(seeds, T, opts = {}) {
     if (k === 3) { rFrom[v] = f; rTo[v] = g; rWait[v] = curWait; }
     heap.push(t, v);
   };
-  // wspólne linie: na przystanku czekasz na pierwszy pojazd z linii, które dowiozą do celu (prawie) tak
+  // wspólne linie: na przesiadce czekasz na pierwszy pojazd z linii, które dowiozą do celu (prawie) tak
   // szybko jak najszybsza, więc ich częstotliwości się sumują (np. A6 i A17 z Mietniowa do Wieliczki)
   const { tline } = G;
   const minR = new Float64Array(S), acc = new Float64Array(S), best = new Float64Array(S);
   const vm = new Int32Array(S), gm = new Int32Array(S), touched = new Int32Array(S);
   let vs = 0, gs = 0;
   seeds.forEach(sd => { relax(sd.v, sd.t, -1, 0, 0); if (sd.noWalk) noWalk[sd.v] = 1; });
-  const walkOnly = !!opts.walkOnly, noRide = !!opts.noRide;
   const { adjStart, adjE, ends, len, nsStart, nsStop, snapNode, snapLen } = W;
   const { bStart, bT, bP, tsi, tof } = G;
   while (heap.n) {
-    const u = heap.pop(), t = heap.top;
-    if (t > time[u]) continue;
+    const x = heap.pop(), t = heap.top;
+    if (t > time[x]) continue;
+    const lay = x >= M ? M : 0, u = x - lay;
     if (u < N) {
       for (let i = adjStart[u]; i < adjStart[u + 1]; i++) {
         const e = adjE[i], v = ends[2 * e] === u ? ends[2 * e + 1] : ends[2 * e];
-        relax(v, t + len[e] / WALK_SPEED, u, 1, e);
+        relax(lay + v, t + len[e] / WALK_SPEED, x, 1, e);
       }
       if (!walkOnly) for (let i = nsStart[u]; i < nsStart[u + 1]; i++) {
         const k = nsStop[i];
-        relax(N + k, t + snapLen[k] / WALK_SPEED, u, 2, 0);
+        relax(lay + N + k, t + snapLen[k] / WALK_SPEED, x, 2, 0);
       }
     } else {
       const k = u - N;
-      if (!noWalk[u] && snapNode[k] >= 0) relax(snapNode[k], t + snapLen[k] / WALK_SPEED, u, 2, 0);
-      if (noRide) continue;
+      if (!noWalk[x] && snapNode[k] >= 0) relax(lay + snapNode[k], t + snapLen[k] / WALK_SPEED, x, 2, 0);
+      if (noRide || walkOnly) continue;
       const b0 = bStart[k], b1 = bStart[k + 1];
       if (b0 === b1) continue;
+      if (!lay) {
+        // pierwszy przejazd: odjazd wg rozkładu, bez czekania
+        curWait = 0;
+        for (let b = b0; b < b1; b++) {
+          const ti = bT[b], pos = bP[b], si = tsi[ti], of = tof[ti], base = of[pos];
+          if (trips[ti].waitP[pos] === Infinity) continue;   // linia nie kursuje w ten typ dnia
+          for (let j = pos + 1; j < si.length; j++) {
+            const d = of[j] - base;
+            if (t + d > T) break;
+            relax(M + N + si[j], t + d, x, 3, ti, pos, j);
+          }
+        }
+        continue;
+      }
       // 1) najkrótsza jazda do każdego dalszego przystanku
       vs++;
       for (let b = b0; b < b1; b++) {
@@ -2362,12 +2382,23 @@ function walkDijkstra(seeds, T, opts = {}) {
           const d = of[j] - base, v = si[j];
           if (t + d > T) break;
           curWait = d <= minR[v] + rideSlack(minR[v]) && acc[v] > 0 ? Math.min(w, Math.max(1 / (2 * acc[v]), 1)) : w;
-          relax(N + v, t + curWait + d, u, 3, ti, pos, j);
+          relax(M + N + v, t + curWait + d, x, 3, ti, pos, j);
         }
       }
     }
   }
-  return { time, prev, kind, via, rFrom, rTo, rWait };
+  if (NL === 1) return { time, prev, kind, via, rFrom, rTo, rWait };
+  // spłaszczenie: dla każdego wierzchołka lepsza z dwóch warstw
+  const L = { time, prev, kind, via, rFrom, rTo, rWait };
+  const ct = new Float64Array(M), cp = new Int32Array(M), ck = new Int8Array(M), cv = new Int32Array(M);
+  const cf = new Int16Array(M), cto = new Int16Array(M), cw = new Float32Array(M), lay = new Uint8Array(M);
+  for (let v = 0; v < M; v++) {
+    const y = time[M + v] < time[v] ? M + v : v;
+    lay[v] = y >= M ? 1 : 0;
+    ct[v] = time[y]; const p = prev[y]; cp[v] = p < 0 ? -1 : p >= M ? p - M : p;
+    ck[v] = kind[y]; cv[v] = via[y]; cf[v] = rFrom[y]; cto[v] = rTo[y]; cw[v] = rWait[y];
+  }
+  return { time: ct, prev: cp, kind: ck, via: cv, rFrom: cf, rTo: cto, rWait: cw, L, lay, M };
 }
 
 // dojście z zaznaczonego punktu: walk1 (ulicami) + czasy dojścia do przystanków w okręgu
@@ -2543,8 +2574,12 @@ function walkLegs(stopId, C = iso) { return walkLegsFrom(WALK.N + STOP_INDEX().g
 // ulic i czasem, przejazdy. W trybie punktu doklejamy dojście z klikniętego miejsca.
 // C = kontekst obliczenia: `iso` (mapa zasięgu) albo `reach` (dojazdy do celów), oba {o, res, walk1, csa}.
 function walkLegsFrom(v0, C = iso) {
-  const W = WALK, N = W.N, r = C.res;
-  const P = x => x < N ? [W.nodes[2 * x] / 1e6, W.nodes[2 * x + 1] / 1e6] : [STOPS[x - N].lat, STOPS[x - N].lon];
+  const W = WALK, N = W.N, r0 = C.res;
+  // wynik dwuwarstwowy (typowy dzień): idziemy po warstwach, `id` zdejmuje numer warstwy
+  const LM = r0.L ? r0.M : 0, r = r0.L || r0;
+  const id = x => (LM && x >= LM ? x - LM : x);
+  const P0 = x => x < N ? [W.nodes[2 * x] / 1e6, W.nodes[2 * x + 1] / 1e6] : [STOPS[x - N].lat, STOPS[x - N].lon];
+  const P = x => P0(id(x));
   const legs = [];
   let walkPts = null, walkEnd = 0;
   const addWalk = (seg, tEnd) => {
@@ -2553,19 +2588,19 @@ function walkLegsFrom(v0, C = iso) {
   const flush = tStart => {
     if (walkPts) { legs.unshift({ walk: true, pts: walkPts, min: walkEnd - tStart }); walkPts = null; }
   };
-  let v = v0, R = r, guard = 0;
+  let v = v0 + (r0.L && r0.lay[v0] ? LM : 0), R = r, guard = 0;
   while (guard++ < 50000) {
     const u = R.prev[v];
     if (u < 0) {
-      if (C.csa && v >= N && R === r) {
+      if (C.csa && id(v) >= N && R === r) {
         flush(R.time[v]);
-        legs.unshift(...csaLegs(v - N, C));
+        legs.unshift(...csaLegs(id(v) - N, C));
         return legs;
       }
       if (C.o.point) {
         // przystanek startowy: dojście ulicami z punktu (walk1), potem linia prosta do kliknięcia
-        if (v >= N && R === r && C.walk1) {
-          const sn = W.snapNode[v - N];
+        if (id(v) >= N && R === r && C.walk1) {
+          const sn = W.snapNode[id(v) - N];
           if (sn >= 0 && isFinite(C.walk1.time[sn])) { addWalk([P(sn), P(v)], R.time[v]); R = C.walk1; v = sn; continue; }
         }
         addWalk([[C.o.lat, C.o.lon], P(v)], R.time[v]);
@@ -2581,7 +2616,7 @@ function walkLegsFrom(v0, C = iso) {
       legs.unshift({ ti: R.via[v], from: R.rFrom[v], to: R.rTo[v], wait: R.rWait ? R.rWait[v] : null });
     } else if (k === 1) {
       const e = R.via[v];
-      addWalk(edgePoints(e, W.ends[2 * e] !== u), R.time[v]);
+      addWalk(edgePoints(e, W.ends[2 * e] !== id(u)), R.time[v]);
     } else {
       addWalk([P(u), P(v)], R.time[v]);
     }
@@ -3034,10 +3069,14 @@ function legsText(legs, C = iso) {
     } else {
       const tr = isoGraph.trips[l.ti], a = tr.s[l.from], z = tr.s[l.to];
       const ride = Math.round(z[1] - a[1]);
-      const wait = Math.round(l.wait != null ? l.wait : tr.waitP ? tr.waitP[l.from] : tr.wait);
+      const w = l.wait != null ? l.wait : tr.waitP ? tr.waitP[l.from] : tr.wait, wait = Math.round(w);
       const refs = [tr.key, ...altLines(l)].map(k => `<b class="leg-line">${esc(k.split('|')[0])}</b>`).join(' / ');
+      // pierwszy przejazd jest bez czekania (wychodzisz na odjazd) — przy rzadkiej linii warto wiedzieć, jak często jeździ
+      const hw = tr.waitP ? 2 * tr.waitP[l.from] : 2 * tr.wait;
+      const note = l.wait === 0 ? (hw >= 20 && isFinite(hw) ? `, jedzie co ${Math.round(hw)} min` : '')
+        : wait >= 1 ? ` + śr. ${wait} min czekania` : '';
       parts.push(`${refs} ${nm(a[0])} → ${nm(z[0])}`
-        + ` <span class="leg-note">· ${l.to - l.from} przyst., ${ride} min${wait >= 1 ? ` + śr. ${wait} min czekania` : ''}</span>`);
+        + ` <span class="leg-note">· ${l.to - l.from} przyst., ${ride} min${note}</span>`);
     }
   });
   return (parts.length ? parts : ['pieszo']).map(p => `<div class="leg">${p}</div>`).join('');
