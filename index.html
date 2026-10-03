@@ -1760,7 +1760,8 @@ const clickIcon = L.divIcon({
 let zoomCtl = null;
 function zoomVisible(d) {
   const s = map.getSize(), top = topUi(), h = Math.max(40, s.y - top - sheetPx());
-  const z = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), map.getZoom() + d));
+  const z0 = map.getZoom();   // po dopasowaniu zasięgu przybliżenie bywa ułamkowe: + − wracają do pełnych poziomów
+  const z = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), d > 0 ? Math.floor(z0 + 1e-6) + 1 : Math.ceil(z0 - 1e-6) - 1));
   if (z !== map.getZoom()) map.setZoomAround(L.point(s.x / 2, top + h / 2), z);
 }
 const ZoomControl = L.Control.extend({
@@ -2822,13 +2823,30 @@ async function computeIso() {
 }
 
 // Gdy obszar zasięgu wychodzi poza widok — oddal/przesuń mapę (nigdy nie przybliżaj).
-function fitIsoView() {
+// Prostokąt obszaru zasięgu: węzły ulic osiągalne w T (bez sieci pieszej — przystanki) i start.
+function isoBounds() {
+  let s = iso.o.lat, n = iso.o.lat, w = iso.o.lon, e = iso.o.lon;
+  const add = (la, lo) => { if (la < s) s = la; if (la > n) n = la; if (lo < w) w = lo; if (lo > e) e = lo; };
+  if (iso.walk && WALK && iso.res && iso.res.time) {
+    const t = iso.res.time, nd = WALK.nodes, T = iso.T;
+    for (let i = 0; i < WALK.N; i++) if (t[i] <= T) add(nd[2 * i] / 1e6, nd[2 * i + 1] / 1e6);
+  } else {
+    iso.labels.forEach((l, id) => { if (l.t <= iso.T) { const st = STOP_BY_ID.get(id); add(st.lat, st.lon); } });
+  }
+  return L.latLngBounds([s, w], [n, e]);
+}
+// Widok zasięgu: sam obszar z małym marginesem (przybliża i oddala), w widocznej części mapy.
+// Przybliżenie ułamkowe (co 0,25), żeby obszar wypełniał widok, a nie jego połowę; przyciski + − wracają do pełnych.
+// onlyOut: tylko oddal, gdy obszar się nie mieści (nie używane przy zmianie czasu ani włączeniu).
+function fitIsoView(onlyOut = false) {
   if (!iso) return;
-  const pts = [[iso.o.lat, iso.o.lon]];
-  iso.labels.forEach((l, id) => { if (l.t <= iso.T) { const s = STOP_BY_ID.get(id); pts.push([s.lat, s.lon]); } });
-  const b = L.latLngBounds(pts);
-  if (!b.isValid() || viewBounds().contains(b)) return;
-  map.fitBounds(b, { ...fitPad(24), maxZoom: map.getZoom() });
+  const b = isoBounds();
+  if (!b.isValid()) return;
+  if (onlyOut && viewBounds().contains(b)) return;
+  const snap = map.options.zoomSnap;
+  map.options.zoomSnap = 0.25;
+  map.fitBounds(b, { ...fitPad(isMobile() ? 16 : 28), maxZoom: onlyOut ? map.getZoom() : 16 });
+  map.options.zoomSnap = snap;
 }
 let isoToken = 0;
 
