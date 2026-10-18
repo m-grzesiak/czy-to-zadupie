@@ -933,6 +933,39 @@
 </div>
 
 <script>
+// Stan aplikacji: wybrane miejsce, linia, zasięg, cel, typ dnia… (jedno źródło prawdy dla widoków)
+const state = {
+  stopMode: null, // {name, lat, lon, poles} gdy kliknięto przystanek
+  radiusCircle: null,
+  radiusMeters: 500,
+  pointLabel: null, // adres z wyszukiwarki dla wybranego punktu (przeciągnięcie pinezki go kasuje)
+  lastNearby: [],
+  pointReach: null, // Map stopId -> metry po ulicach | null (brak dojścia); null = nie liczono
+  lastOutside: null, // najbliższe przystanki poza okręgiem, gdy w okręgu nie ma żadnego
+  selectedRouteKey: null,
+  selectedVariant: 0,
+  selectedDay: null,
+  ldTab: 'trasa',
+  ldKurs: null,
+  ldBefore: false,
+  ldEarly: false,
+  sheetState: 'peek',
+  iso: null, // {origin, T, labels: Map(id -> {t, prev, ti, from, to, walk})}
+  isoT: 20,
+  isoMode: 'typical', // 'typical' | 'time'
+  isoDay: 'w',
+  isoDate: null,
+  isoTime: null, // tryb czasu: data ISO i minuty od północy
+  target: null,
+  targetPopOn: false,
+  pickingTarget: false,
+  boardLimit: 16,
+  reach: null,
+  placeStats: null,
+  applyingState: false,
+  restoringPlace: false,
+};
+
 // ---------------------------------------------------------------------------
 // DANE ZAPASOWE (demo) — używane tylko gdy nie uda się wczytać stops_data.json
 // (np. brak pliku obok, albo otwarcie przez file:// gdzie fetch() bywa blokowany
@@ -972,24 +1005,17 @@ const DEMO_STOPS = [
 let STOPS = [];
 let STOP_BY_ID = new Map();
 let META = null;      // {calendar:{"2026-09-27":0,...}, deps:{dlat,dlon,path}} — brak w danych demo
-let lastNearby = [];
-let stopMode = null;   // {name, lat, lon, poles} gdy kliknięto przystanek
-let selectedDay = null;
-let selectedVariant = 0;
 let routeLayers = [];
 const depsCache = new Map();
 let ROUTES = {};  // "ref|type" -> {ref, type, color, shapes:[[[lat,lon],...],...]}
 let map;
 let stopMarkers = [];
 let clickMarker = null;
-let radiusCircle = null;
-let radiusMeters = 500;
 let routeLayerGroup = null;
 let routeStopsLayer = null;
 let routeStopMarkers = [];
 let previewStopsLayer = null;
 let LINE_STOPS = null;   // "ref|type" -> [przystanki obsługiwane przez linię]
-let selectedRouteKey = null;
 
 const radiusInput = document.getElementById('radius');
 const radiusVal = document.getElementById('radius-val');
@@ -1010,37 +1036,36 @@ const isMobile = () => MQ_MOBILE.matches;
 const panelEl = document.getElementById('panel');
 const layoutEl = document.getElementById('layout');
 const appEl = document.getElementById('app');
-let sheetState = 'peek';
 let sheetMode = null;
 let revealTimer = 0;
 const ICON_X = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ICON_BACK = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function setSheet(st) {
   if (st === 'peek') panelEl.scrollTop = 0;
-  sheetState = st;
+  state.sheetState = st;
   updateSheet();
 }
 function updateSheet() {
-  const empty = !stopMode && !radiusCircle;
-  const lineOpen = !empty && !!selectedRouteKey;
-  const isoOpen = !empty && !lineOpen && !!iso;
+  const empty = !state.stopMode && !state.radiusCircle;
+  const lineOpen = !empty && !!state.selectedRouteKey;
+  const isoOpen = !empty && !lineOpen && !!state.iso;
   appEl.classList.toggle('st-empty', empty);
   panelEl.classList.toggle('line-open', lineOpen);
   panelEl.classList.toggle('iso-open', isoOpen);
-  layoutEl.classList.toggle('sheet-peek', !empty && !isoOpen && sheetState === 'peek');
-  layoutEl.classList.toggle('sheet-full', !empty && !isoOpen && sheetState === 'full');
+  layoutEl.classList.toggle('sheet-peek', !empty && !isoOpen && state.sheetState === 'peek');
+  layoutEl.classList.toggle('sheet-full', !empty && !isoOpen && state.sheetState === 'full');
   const tog = document.getElementById('panel-toggle');
-  tog.setAttribute('aria-expanded', String(sheetState === 'full'));
-  tog.setAttribute('aria-label', sheetState === 'full' ? 'Zwiń panel' : 'Rozwiń panel');
+  tog.setAttribute('aria-expanded', String(state.sheetState === 'full'));
+  tog.setAttribute('aria-label', state.sheetState === 'full' ? 'Zwiń panel' : 'Rozwiń panel');
   // lewy górny róg mapy: × zamyka miejsce, z linii / zasięgu „← Okolica” (albo „← Przystanek”) wraca
   const back = document.getElementById('m-back');
   const toPlace = lineOpen || isoOpen;
   back.hidden = empty;
   document.getElementById('m-search').hidden = empty;
   back.classList.toggle('x', !toPlace);
-  back.innerHTML = toPlace ? `${ICON_BACK}${stopMode ? 'Przystanek' : 'Okolica'}` : ICON_X;
+  back.innerHTML = toPlace ? `${ICON_BACK}${state.stopMode ? 'Przystanek' : 'Okolica'}` : ICON_X;
   back.setAttribute('aria-label', lineOpen ? 'Zamknij linię' : isoOpen ? 'Wyłącz zasięg' : 'Zamknij to miejsce');
-  const mode = empty ? 'card' : isoOpen ? 'iso' : (lineOpen ? 'line-' : '') + sheetState;
+  const mode = empty ? 'card' : isoOpen ? 'iso' : (lineOpen ? 'line-' : '') + state.sheetState;
   if (mode !== sheetMode) {
     const first = sheetMode === null;
     sheetMode = mode;
@@ -1084,10 +1109,10 @@ function setViewVisible(ll, z) {
 function revealFocus() {
   if (!map || !isMobile()) return;
   setSheetVar();
-  if (selectedRouteKey) { fitRouteView(); return; }
-  if (iso) { fitIsoView(); return; }
-  if (target) {
-    const o = isoOrigin(), b = L.latLngBounds([[target.lat, target.lon]].concat(o ? [[o.lat, o.lon]] : []));
+  if (state.selectedRouteKey) { fitRouteView(); return; }
+  if (state.iso) { fitIsoView(); return; }
+  if (state.target) {
+    const o = isoOrigin(), b = L.latLngBounds([[state.target.lat, state.target.lon]].concat(o ? [[o.lat, o.lon]] : []));
     if (!viewBounds(0.05).contains(b)) map.fitBounds(b, { ...fitPad(50), maxZoom: map.getZoom() });
     return;
   }
@@ -1096,9 +1121,9 @@ function revealFocus() {
 }
 // zamknięcie miejsca (× na telefonie): z powrotem sama mapa
 function closePlace() {
-  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
   setPicking(false);
-  target = null; targetPopOn = false;
+  state.target = null; state.targetPopOn = false;
   renderTargetBox();
   showEmpty();
   syncURL(true);
@@ -1209,7 +1234,7 @@ function lineStops(key) {
 // wariantów) są większe i — dla wybranej linii — podpisane.
 function buildRouteStops(route, key, interactive) {
   const color = routeColor(route);
-  const hl = new Set(lastNearby.map(s => s.id));
+  const hl = new Set(state.lastNearby.map(s => s.id));
   const terminals = new Set();
   (route.trips || []).forEach(t => {
     if (t && t.s.length) { terminals.add(t.s[0][0]); terminals.add(t.s[t.s.length - 1][0]); }
@@ -1247,7 +1272,7 @@ let previewKey = null;
 function showPreview(key) {
   if (key === previewKey) return;
   clearPreview();
-  if (key === selectedRouteKey) return;
+  if (key === state.selectedRouteKey) return;
   const route = ROUTES[key];
   if (!route || !route.shapes || !route.shapes.length) return;
   previewKey = key;
@@ -1267,8 +1292,8 @@ function clearPreview() {
 
 function selectRoute(key) {
   clearPreview();
-  if (selectedRouteKey === key) {
-    selectedRouteKey = null;
+  if (state.selectedRouteKey === key) {
+    state.selectedRouteKey = null;
     clearRouteLayers();
     routeStatus.textContent = '';
     restyleStops();
@@ -1277,11 +1302,11 @@ function selectRoute(key) {
     syncURL(true);
     return;
   }
-  const wasSel = !!selectedRouteKey;
-  selectedRouteKey = key;
-  selectedVariant = defaultVariant(key);
-  ldKurs = null; ldBefore = false; ldEarly = false;
-  sheetState = 'peek';
+  const wasSel = !!state.selectedRouteKey;
+  state.selectedRouteKey = key;
+  state.selectedVariant = defaultVariant(key);
+  state.ldKurs = null; state.ldBefore = false; state.ldEarly = false;
+  state.sheetState = 'peek';
   panelEl.scrollTop = 0;
   if (!wasSel) restyleStops();   // pozostałe przystanki przygaszone od razu, nie dopiero po zoomie
   drawRoute(key);
@@ -1314,10 +1339,10 @@ function drawRoute(key) {
 // Widok: fragment trasy w okolicy wybranego miejsca (do 3 km), a nie cała linia przez pół miasta.
 // Mapę tylko oddalamy/przesuwamy, nigdy nie przybliżamy. Na telefonie z marginesem na arkusz.
 function fitRouteView() {
-  const route = ROUTES[selectedRouteKey];
+  const route = ROUTES[state.selectedRouteKey];
   if (!route || !route.shapes || !route.shapes.length) return;
   const allPts = route.shapes.flat();
-  const c = stopMode ? L.latLng(stopMode.lat, stopMode.lon) : radiusCircle ? radiusCircle.getLatLng() : null;
+  const c = state.stopMode ? L.latLng(state.stopMode.lat, state.stopMode.lon) : state.radiusCircle ? state.radiusCircle.getLatLng() : null;
   let pts = allPts;
   if (c) {
     const near = allPts.filter(p => haversineMeters(c.lat, c.lng, p[0], p[1]) <= 3000);
@@ -1329,7 +1354,7 @@ function fitRouteView() {
 
 function updateBadgeSelection() {
   document.querySelectorAll('.badge').forEach(el => {
-    el.classList.toggle('selected', el.dataset.key === selectedRouteKey);
+    el.classList.toggle('selected', el.dataset.key === state.selectedRouteKey);
   });
 }
 
@@ -1338,27 +1363,27 @@ document.getElementById('results').addEventListener('click', (e) => {
   if (loc) { locateMe(loc); return; }
   const tb = e.target.closest('[data-ptab]');
   if (tb) { pickTab(tb.dataset.ptab); return; }
-  if (e.target.closest('[data-line-close]')) { if (selectedRouteKey) selectRoute(selectedRouteKey); return; }
+  if (e.target.closest('[data-line-close]')) { if (state.selectedRouteKey) selectRoute(state.selectedRouteKey); return; }
   const dirB = e.target.closest('[data-dir]');
   if (dirB) { pickDir(dirB.dataset.dir); return; }
   const ldt = e.target.closest('[data-ldtab]');
   if (ldt) { setLdTab(ldt.dataset.ldtab); return; }
   const kb = e.target.closest('[data-kurs]');
   if (kb) {
-    ldKurs = +kb.dataset.kurs;
+    state.ldKurs = +kb.dataset.kurs;
     document.querySelectorAll('.ld-nt').forEach(b => { const on = b === kb; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
-    if (ldTab !== 'trasa') setLdTab('trasa'); else renderLdPane(detailToken);
+    if (state.ldTab !== 'trasa') setLdTab('trasa'); else renderLdPane(detailToken);
     return;
   }
-  if (e.target.closest('[data-ld-before]')) { ldBefore = true; renderLdPane(detailToken); return; }
-  if (e.target.closest('[data-ld-early]')) { ldEarly = true; renderLdPane(detailToken); return; }
+  if (e.target.closest('[data-ld-before]')) { state.ldBefore = true; renderLdPane(detailToken); return; }
+  if (e.target.closest('[data-ld-early]')) { state.ldEarly = true; renderLdPane(detailToken); return; }
   const ex = e.target.closest('[data-example]');
   if (ex) { const [la, lo] = ex.dataset.example.split(',').map(Number); const ll = L.latLng(la, lo); selectPoint(ll); setViewVisible(ll, 15); return; }
   const del = e.target.closest('[data-place-del]');
   if (del) { e.stopPropagation(); removeMyPlace(+del.dataset.placeDel); return; }
   const dst = e.target.closest('[data-dest]');
   if (dst) { const d = destById(dst.dataset.dest); if (d) setTarget(d.lat, d.lon, d.name, true); return; }
-  if (e.target.closest('[data-pick-target]')) { setPicking(!pickingTarget); return; }
+  if (e.target.closest('[data-pick-target]')) { setPicking(!state.pickingTarget); return; }
   if (e.target.closest('[data-target-clear]')) { clearTarget(); return; }
   if (e.target.closest('[data-target-origin]')) { targetAsOrigin(); return; }
   if (e.target.closest('[data-target-save]')) { renderTargetBox(true); return; }
@@ -1368,42 +1393,42 @@ document.getElementById('results').addEventListener('click', (e) => {
   if (grow) { setRadius(+grow.dataset.radiusTo); return; }
   const im = e.target.closest('[data-iso-mode]');
   if (im) {
-    isoMode = im.dataset.isoMode;
-    if (isoMode === 'time') { isoDate = isoDate || todayISO(); if (isoTime == null) isoTime = nowMinutes(); }
+    state.isoMode = im.dataset.isoMode;
+    if (state.isoMode === 'time') { state.isoDate = state.isoDate || todayISO(); if (state.isoTime == null) state.isoTime = nowMinutes(); }
     computeIso(); return;
   }
   const idy = e.target.closest('[data-iso-day]');
   if (idy) { setDayType(idy.dataset.isoDay); return; }
   const idt = e.target.closest('[data-iso-date]');
-  if (idt) { isoDate = idt.dataset.isoDate; computeIso(); return; }
+  if (idt) { state.isoDate = idt.dataset.isoDate; computeIso(); return; }
   const inow = e.target.closest('[data-iso-now]');
-  if (inow) { isoDate = todayISO(); isoTime = nowMinutes(); computeIso(); return; }
+  if (inow) { state.isoDate = todayISO(); state.isoTime = nowMinutes(); computeIso(); return; }
   const igo = e.target.closest('[data-iso-goto]');
-  if (igo) { const [d, m] = igo.dataset.isoGoto.split(','); isoDate = d; isoTime = +m; computeIso(); return; }
+  if (igo) { const [d, m] = igo.dataset.isoGoto.split(','); state.isoDate = d; state.isoTime = +m; computeIso(); return; }
   const iat = e.target.closest('[data-iso-at]');
-  if (iat) { isoTime = +iat.dataset.isoAt; computeIso(); return; }
+  if (iat) { state.isoTime = +iat.dataset.isoAt; computeIso(); return; }
   const isoBtn = e.target.closest('[data-iso]');
   if (isoBtn) {
     if (isoBtn.dataset.iso === 'on') computeIso().then(() => document.querySelector('#iso-box .iso-row')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     else { clearIso(); renderIsoBox(); syncURL(true); }
     return;
   }
-  if (e.target.closest('[data-board-more]')) { boardLimit = Math.max(boardLimit, 8) + 16; renderBoard(); return; }
+  if (e.target.closest('[data-board-more]')) { state.boardLimit = Math.max(state.boardLimit, 8) + 16; renderBoard(); return; }
   const around = e.target.closest('[data-around]');
-  if (around && stopMode) { const { lat, lon } = stopMode; selectPoint(L.latLng(lat, lon)); return; }
+  if (around && state.stopMode) { const { lat, lon } = state.stopMode; selectPoint(L.latLng(lat, lon)); return; }
   const stopEl = e.target.closest('[data-stop-id]');
   if (stopEl) { const st = STOP_BY_ID.get(stopEl.dataset.stopId); hideListStop(); if (st) selectStop(st); return; }
   const lineEl = e.target.closest('[data-line]');
   if (lineEl) {
     const k = lineEl.dataset.line;
-    if (selectedRouteKey !== k) selectRoute(k);
+    if (state.selectedRouteKey !== k) selectRoute(k);
     document.getElementById('line-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
   const day = e.target.closest('[data-day]');
-  if (day) { selectedDay = day.dataset.day; ldEarly = false; renderLdPane(detailToken); return; }
+  if (day) { state.selectedDay = day.dataset.day; state.ldEarly = false; renderLdPane(detailToken); return; }
   const v = e.target.closest('[data-variant]');
-  if (v) { selectedVariant = +v.dataset.variant; ldBefore = false; styleVariants(); renderLineDetail(); return; }
+  if (v) { state.selectedVariant = +v.dataset.variant; state.ldBefore = false; styleVariants(); renderLineDetail(); return; }
   const badge = e.target.closest('.badges .badge');
   if (!badge) return;
   selectRoute(badge.dataset.key);
@@ -1493,7 +1518,7 @@ function servesLine(stop, key) {
 
 // najbliższy (po nazwie) przystanek w promieniu, który obsługuje linię — wszystkie jego słupki
 function nearestPoles(key) {
-  const serving = lastNearby.filter(s => servesLine(s, key));
+  const serving = state.lastNearby.filter(s => servesLine(s, key));
   if (!serving.length) return null;
   const name = serving[0].name;
   return { name, dist: serving[0].dist, poles: serving.filter(s => s.name === name) };
@@ -1525,9 +1550,9 @@ function routeW() {
 }
 function styleVariants() {
   const W = routeW();
-  routeLayers.forEach((l, i) => l.setStyle(i === selectedVariant
+  routeLayers.forEach((l, i) => l.setStyle(i === state.selectedVariant
     ? { weight: W.sel, opacity: 0.95 } : { weight: W.oth, opacity: 0.45 }));
-  if (routeLayers[selectedVariant]) routeLayers[selectedVariant].bringToFront();
+  if (routeLayers[state.selectedVariant]) routeLayers[state.selectedVariant].bringToFront();
   routeStopMarkers.forEach(({ m, term }) => { m.setRadius(term ? W.term : W.st); m.setStyle({ weight: term ? W.sw + 0.6 : W.sw }); });
   drawRouteArrows();
   // przystanki linii zawsze nad jej trasą (bringToFront wyżej przesuwa linię na wierzch)
@@ -1539,8 +1564,8 @@ function styleVariants() {
 let arrowLayer = null;
 function drawRouteArrows() {
   if (arrowLayer) { map.removeLayer(arrowLayer); arrowLayer = null; }
-  const route = selectedRouteKey && ROUTES[selectedRouteKey];
-  const shape = route && route.shapes && route.shapes[selectedVariant];
+  const route = state.selectedRouteKey && ROUTES[state.selectedRouteKey];
+  const shape = route && route.shapes && route.shapes[state.selectedVariant];
   if (!shape || shape.length < 2) return;
   const W = routeW(), color = routeColor(route);
   const size = Math.max(6, W.sel * 1.6), STEP = 90;   // wyraźnie szersze niż linia
@@ -1590,10 +1615,6 @@ let detailToken = 0;
 let ttToken = 0;
 // stan widoku linii: zakładka, wybrany kurs (minuty od północy, do godzin na trasie),
 // rozwinięte wcześniejsze przystanki i wcześniejsze godziny rozkładu
-let ldTab = 'trasa';
-let ldKurs = null;
-let ldBefore = false;
-let ldEarly = false;
 const ldCache = new Map();
 // odjazdy linii z przystanku (wszystkie jego słupki) w danym dniu, pogrupowane po kierunku z rozkładu (headsign)
 async function lineDepsFor(np, key, day) {
@@ -1641,9 +1662,9 @@ function dirDeps(route, byH, dir, hereName) {
 }
 // kierunek = wariant z tym headsignem, w którym wybrany przystanek jest najwcześniej (jedziemy „stąd”)
 function pickDir(h) {
-  const route = ROUTES[selectedRouteKey];
+  const route = ROUTES[state.selectedRouteKey];
   if (!route) return;
-  const np = nearestPoles(selectedRouteKey);
+  const np = nearestPoles(state.selectedRouteKey);
   let best = -1, bestPos = Infinity;
   (route.trips || []).forEach((t, i) => {
     if (!t || t.h !== h) return;
@@ -1652,13 +1673,13 @@ function pickDir(h) {
     if (best < 0 || rel < bestPos) { bestPos = rel; best = i; }
   });
   if (best < 0) return;
-  selectedVariant = best;
-  ldKurs = null; ldBefore = false;
+  state.selectedVariant = best;
+  state.ldKurs = null; state.ldBefore = false;
   styleVariants();
   renderLineDetail();
 }
 function setLdTab(tab) {
-  ldTab = tab;
+  state.ldTab = tab;
   document.querySelectorAll('.ld-tabs [data-ldtab]').forEach(b => {
     const on = b.dataset.ldtab === tab;
     b.classList.toggle('on', on);
@@ -1673,16 +1694,16 @@ function renderLineDetail() {
   const el = document.getElementById('line-detail');
   updateSheet();
   if (!el) return;
-  const key = selectedRouteKey;
+  const key = state.selectedRouteKey;
   const route = key && ROUTES[key];
   if (!route) { el.innerHTML = ''; return; }
   const token = ++detailToken;
   const np = nearestPoles(key);
   const trips = route.trips || [];
-  if (!trips[selectedVariant]) selectedVariant = Math.max(0, trips.findIndex(Boolean));
-  const t = trips[selectedVariant];
+  if (!trips[state.selectedVariant]) state.selectedVariant = Math.max(0, trips.findIndex(Boolean));
+  const t = trips[state.selectedVariant];
   const kind = TYPE_NAME[route.type] || 'Autobus';
-  const hw = isNight(key) ? 'linia nocna' : hwText(key, placeStats);
+  const hw = isNight(key) ? 'linia nocna' : hwText(key, state.placeStats);
 
   let html = `<div class="ld-head"><span class="ld-num ${route.type}">${esc(route.ref)}</span>
     <div class="ld-ttl"><div class="ld-kind">${kind}${route.op ? ` · ${esc(route.op)}` : ''}${hw && hw !== 'nie kursuje' ? ` · ${hw}` : ''}</div>
@@ -1700,7 +1721,7 @@ function renderLineDetail() {
     const same = trips.map((x, i) => [x, i]).filter(([x]) => x && x.h === t.h);
     if (same.length > 1) {
       html += '<div class="chips ld-vars">' + same.map(([x, i]) =>
-        `<button type="button" class="chip${i === selectedVariant ? ' on' : ''}" data-variant="${i}">${esc(STOP_BY_ID.get(x.s[0][0])?.name || '')} → ${esc(x.h)}</button>`).join('') + '</div>';
+        `<button type="button" class="chip${i === state.selectedVariant ? ' on' : ''}" data-variant="${i}">${esc(STOP_BY_ID.get(x.s[0][0])?.name || '')} → ${esc(x.h)}</button>`).join('') + '</div>';
     } else if (dirs.length < 2) html += `<div class="ld-from">Kierunek <b>→ ${esc(t.h)}</b></div>`;
   }
 
@@ -1709,14 +1730,14 @@ function renderLineDetail() {
   else if (!np) html += '<div class="muted ld-from">Ta linia nie zatrzymuje się w zaznaczonym promieniu.</div>';
   else {
     // odległość jak na liście przystanków: pieszo po ulicach, jeśli policzona
-    const walkM = pointReach ? Math.min(...np.poles.map(p => pointReach.get(p.id) ?? Infinity)) : Infinity;
+    const walkM = state.pointReach ? Math.min(...np.poles.map(p => state.pointReach.get(p.id) ?? Infinity)) : Infinity;
     const distTxt = isFinite(walkM) ? `${Math.round(walkM / 10) * 10} m pieszo` : `${Math.round(np.dist)} m`;
-    html += `<div class="ld-from">Odjazdy z przystanku <b>${esc(np.name)}</b>${stopMode ? '' : ` · ${distTxt}`}</div>`
+    html += `<div class="ld-from">Odjazdy z przystanku <b>${esc(np.name)}</b>${state.stopMode ? '' : ` · ${distTxt}`}</div>`
       + '<div class="ld-next" id="ld-next"><div class="muted">Wczytuję rozkład…</div></div>';
   }
   html += `<div class="ld-tabs" role="tablist" aria-label="Szczegóły linii">`
-    + `<button type="button" role="tab" data-ldtab="trasa" class="${ldTab === 'trasa' ? 'on' : ''}" aria-selected="${ldTab === 'trasa'}">Trasa i czasy</button>`
-    + `<button type="button" role="tab" data-ldtab="rozklad" class="${ldTab === 'rozklad' ? 'on' : ''}" aria-selected="${ldTab === 'rozklad'}">Rozkład</button></div>`
+    + `<button type="button" role="tab" data-ldtab="trasa" class="${state.ldTab === 'trasa' ? 'on' : ''}" aria-selected="${state.ldTab === 'trasa'}">Trasa i czasy</button>`
+    + `<button type="button" role="tab" data-ldtab="rozklad" class="${state.ldTab === 'rozklad' ? 'on' : ''}" aria-selected="${state.ldTab === 'rozklad'}">Rozkład</button></div>`
     + '<div id="ld-pane"></div>';
   el.innerHTML = html;
   renderLdPane(token);
@@ -1725,37 +1746,37 @@ function renderLineDetail() {
 
 // najbliższe odjazdy w wybranym kierunku (dziś); kafelek = kurs, dla którego liczą się godziny na trasie
 async function renderLdNext(token) {
-  const key = selectedRouteKey, route = ROUTES[key], np = nearestPoles(key);
+  const key = state.selectedRouteKey, route = ROUTES[key], np = nearestPoles(key);
   if (!route || !np) return;
-  const t = (route.trips || [])[selectedVariant];
+  const t = (route.trips || [])[state.selectedVariant];
   const d = await lineDepsFor(np, key, todayISO());
   const box = document.getElementById('ld-next');
   if (token !== detailToken || !box) return;
   const nowMin = nowMinutes();
   const deps = d ? dirDeps(route, d.byH, t ? t.h : null, np.name) : [];
   const next = deps.filter(x => x.m >= nowMin).slice(0, 4);
-  if (ldKurs != null && !next.some(x => x.m === ldKurs)) ldKurs = null;
-  if (ldKurs == null && next.length) ldKurs = next[0].m;
+  if (state.ldKurs != null && !next.some(x => x.m === state.ldKurs)) state.ldKurs = null;
+  if (state.ldKurs == null && next.length) state.ldKurs = next[0].m;
   box.innerHTML = !d ? '<div class="muted">Brak rozkładu na dziś.</div>'
     : !next.length ? `<div class="muted">${deps.length ? 'Dziś już nic stąd nie odjeżdża w tym kierunku.' : 'Dziś ta linia nie odjeżdża stąd w tym kierunku.'}</div>`
-    : next.map(x => `<button type="button" class="ld-nt${x.m === ldKurs ? ' on' : ''}" data-kurs="${x.m}" aria-pressed="${x.m === ldKurs}" title="Godziny na trasie dla kursu o ${fmt(x.m)}">`
+    : next.map(x => `<button type="button" class="ld-nt${x.m === state.ldKurs ? ' on' : ''}" data-kurs="${x.m}" aria-pressed="${x.m === state.ldKurs}" title="Godziny na trasie dla kursu o ${fmt(x.m)}">`
       + `<b>${fmt(x.m)}</b><small>${zaMin(x.m - nowMin)}</small>${t && x.h !== t.h ? `<em>→ ${esc(x.h)}</em>` : ''}</button>`).join('');
-  if (ldTab === 'trasa') renderLdPane(token);   // godziny przyjazdu zależą od wybranego kursu
+  if (state.ldTab === 'trasa') renderLdPane(token);   // godziny przyjazdu zależą od wybranego kursu
 }
 
 function renderLdPane(token) {
   const pane = document.getElementById('ld-pane');
-  const key = selectedRouteKey, route = key && ROUTES[key];
+  const key = state.selectedRouteKey, route = key && ROUTES[key];
   if (!pane || !route || token !== detailToken) return;
-  if (ldTab === 'rozklad') { renderLdTimetable(pane, route, key); return; }
-  const t = (route.trips || [])[selectedVariant];
+  if (state.ldTab === 'rozklad') { renderLdTimetable(pane, route, key); return; }
+  const t = (route.trips || [])[state.selectedVariant];
   if (!t) { pane.innerHTML = '<div class="muted">Brak czasów przejazdu w tych danych.</div>'; return; }
   const np = nearestPoles(key);
   const here = np ? t.s.findIndex(([id]) => STOP_BY_ID.get(id)?.name === np.name) : -1;
   const base = here >= 0 ? (t.s[here][1] ?? 0) : 0;
   const total = t.s[t.s.length - 1][1];
   const lastName = STOP_BY_ID.get(t.s[t.s.length - 1][0])?.name || t.h;
-  const kurs = here >= 0 && ldKurs != null ? ldKurs : null;
+  const kurs = here >= 0 && state.ldKurs != null ? state.ldKurs : null;
   let html = '';
   if (total != null) {
     html += `<div class="ld-total">Do ${esc(lastName)}: <b>${total - base} min</b>`
@@ -1771,10 +1792,10 @@ function renderLdPane(token) {
     rows.push({ i, id, name, off });
   });
   const before = rows.filter(r => here >= 0 && r.i < here);
-  if (before.length && !ldBefore) {
+  if (before.length && !state.ldBefore) {
     html += `<button type="button" class="ld-more" data-ld-before="1"><span aria-hidden="true">↑</span> ${before.length} ${plural(before.length, 'wcześniejszy przystanek', 'wcześniejsze przystanki', 'wcześniejszych przystanków')}, od ${esc(before[0].name)}</button>`;
   }
-  html += '<ul class="tl">' + rows.filter(r => ldBefore || !(here >= 0 && r.i < here)).map(r => {
+  html += '<ul class="tl">' + rows.filter(r => state.ldBefore || !(here >= 0 && r.i < here)).map(r => {
     const isBefore = here >= 0 && r.i < here;
     const cls = isBefore ? 'before' : r.i === here ? 'here' : '';
     let val = '';
@@ -1794,20 +1815,20 @@ async function renderLdTimetable(pane, route, key) {
   if (!META || !META.calendar) { pane.innerHTML = '<div class="muted">Rozkład jest dostępny tylko dla pełnych danych (stops_data.json + katalog deps/).</div>'; return; }
   if (!np) { pane.innerHTML = '<div class="muted">Ta linia nie zatrzymuje się w zaznaczonym promieniu.</div>'; return; }
   const today = todayISO();
-  if (!selectedDay || selectedDay < today) selectedDay = today;
+  if (!state.selectedDay || state.selectedDay < today) state.selectedDay = today;
   const days = [];
   for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(localISO(d)); }
   pane.innerHTML = '<div class="chips">' + days.map((d, i) => {
     const dd = new Date(d + 'T12:00');
     const label = i === 0 ? 'Dziś' : i === 1 ? 'Jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
-    return `<button type="button" class="chip${d === selectedDay ? ' on' : ''}" data-day="${d}" aria-pressed="${d === selectedDay}">${label}</button>`;
+    return `<button type="button" class="chip${d === state.selectedDay ? ' on' : ''}" data-day="${d}" aria-pressed="${d === state.selectedDay}">${label}</button>`;
   }).join('') + '</div><div id="ld-tt"><div class="muted">Wczytuję rozkład…</div></div>';
-  const tok = ++ttToken, day = selectedDay;
+  const tok = ++ttToken, day = state.selectedDay;
   const d = await lineDepsFor(np, key, day);
   const box = document.getElementById('ld-tt');
   if (tok !== ttToken || !box) return;
   if (!d) { box.innerHTML = '<div class="muted">Brak rozkładu na ten dzień.</div>'; return; }
-  const t = (route.trips || [])[selectedVariant];
+  const t = (route.trips || [])[state.selectedVariant];
   const deps = dirDeps(route, d.byH, t ? t.h : null, np.name);
   if (!deps.length) { box.innerHTML = `<div class="muted">Tego dnia ta linia nie odjeżdża stąd${t ? ` w kierunku ${esc(t.h)}` : ''}.</div>`; return; }
   const isToday = day === today, nowMin = nowMinutes();
@@ -1815,7 +1836,7 @@ async function renderLdTimetable(pane, route, key) {
   const hours = new Map();
   deps.forEach(x => { const hh = Math.floor(x.m / 60); if (!hours.has(hh)) hours.set(hh, []); hours.get(hh).push(x); });
   let entries = [...hours.entries()], early = '';
-  if (isToday && !ldEarly) {
+  if (isToday && !state.ldEarly) {
     const curH = Math.floor(nowMin / 60);
     const past = entries.filter(([hh]) => hh < curH);
     if (past.length >= 2) {
@@ -1921,7 +1942,7 @@ function locateMe(box) {
   navigator.geolocation.getCurrentPosition(pos => {
     box.classList.remove('busy');
     const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
-    if (selectedRouteKey) selectRoute(selectedRouteKey);
+    if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
     selectPoint(ll);
     const near = STOPS.some(s => haversineMeters(ll.lat, ll.lng, s.lat, s.lon) < 5000);
     if (!near) showNotice('Jesteś poza obszarem, który obejmują dane (Kraków i okolice).');
@@ -1957,7 +1978,7 @@ function stopKind(s) {
 function baseStopStyle(s) {
   const k = stopScale();
   // przy zasięgu albo wybranej linii pozostałe przystanki schodzą na drugi plan (przystanki linii mają własne kółka)
-  if (iso || selectedRouteKey) return { radius: 2.6 * k, weight: 1, color: '#9d998d', fillColor: '#f4f2ec', fillOpacity: 0.8, opacity: 0.7, dashArray: null };
+  if (state.iso || state.selectedRouteKey) return { radius: 2.6 * k, weight: 1, color: '#9d998d', fillColor: '#f4f2ec', fillOpacity: 0.8, opacity: 0.7, dashArray: null };
   const kind = s ? stopKind(s) : 'bus';
   // stacja kolejowa trochę większa i z grubszą obwódką — widać ją między przystankami
   return { radius: (kind === 'train' ? 4.6 : 3.4) * k, weight: Math.max(1.3, (kind === 'train' ? 2.6 : 2) * k), color: STOP_COLOR[kind] || STOP_BUS,
@@ -2001,7 +2022,7 @@ function initMap() {
     m.on('mouseover', () => showStopHover(s));
     m.on('mouseout', () => stopMouseOut(s));
     m.on('click', () => {
-      if (selectedRouteKey && !targetClickMode()) selectRoute(selectedRouteKey);   // przystanek spoza trasy: chowamy trasę
+      if (state.selectedRouteKey && !targetClickMode()) selectRoute(state.selectedRouteKey);   // przystanek spoza trasy: chowamy trasę
       stopClicked(s);
     });
     return m;
@@ -2029,18 +2050,18 @@ function initMap() {
   // Każdy klik coś robi — nie ma kliknięć, które tylko chowają poprzedni widok.
   map.on('click', (e) => {
     if (targetClickMode()) { setTarget(e.latlng.lat, e.latlng.lng, null, false, { pop: true }); return; }
-    if (selectedRouteKey) selectRoute(selectedRouteKey);
+    if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
     selectPoint(e.latlng);
   });
   map.on('movestart zoomstart', () => { hideStopHover(); hidePointHover(); });
   const zoomCls = () => map.getContainer().classList.toggle('z-lo', map.getZoom() < 16);
   zoomCls();
-  map.on('zoomend', () => { restyleStops(); zoomCls(); if (selectedRouteKey) styleVariants(); });   // kropki i trasa rosną z przybliżeniem
+  map.on('zoomend', () => { restyleStops(); zoomCls(); if (state.selectedRouteKey) styleVariants(); });   // kropki i trasa rosną z przybliżeniem
   // dotyk: przeglądarka dosyła po stuknięciu sztuczny mousemove — bez hovera (na telefonie jest dymek)
   let lastTouch = 0;
   map.getContainer().addEventListener('touchstart', () => { lastTouch = Date.now(); }, { passive: true });
   map.on('mousemove', e => {
-    if (!iso || !iso.walk || Date.now() - lastTouch < 1000) return;
+    if (!state.iso || !state.iso.walk || Date.now() - lastTouch < 1000) return;
     schedulePointHover(e.latlng);
   });
   // mouseleave samego kontenera (mapowe 'mouseout' odpala się też między elementami wewnątrz mapy)
@@ -2096,10 +2117,10 @@ function showStopHover(s) {
     className: '', iconSize: [0, 0],
     html: `<div class="sh${below ? ' below' : ''}${side}" style="--sh-c:${c}">
       <div class="sh-ring"></div><div class="sh-dot"></div>
-      <div class="sh-tip${iso ? ' wide' : ''}"><div class="sh-name">${esc(s.name)}</div>
+      <div class="sh-tip${state.iso ? ' wide' : ''}"><div class="sh-name">${esc(s.name)}</div>
         <div class="sh-meta">${meta}</div>
         ${chips}
-        ${isoCardLine(s, sibs)}${!stopMode && pointReach && pointReach.get(s.id) === null ? '<div class="sh-unreach">Brak dojścia pieszo z zaznaczonego miejsca</div>' : ''}</div></div>`
+        ${isoCardLine(s, sibs)}${!state.stopMode && state.pointReach && state.pointReach.get(s.id) === null ? '<div class="sh-unreach">Brak dojścia pieszo z zaznaczonego miejsca</div>' : ''}</div></div>`
   });
   const sibIcon = L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="sh" style="--sh-c:${c}"><div class="sh-sib"></div></div>` });
   hoverLayer = L.layerGroup([
@@ -2116,8 +2137,6 @@ const ISO_RAMP = ['#104281', '#1c5cab', '#2a78d6', '#5598e7', '#86b6ef'];  // bl
 const WALK_MPM = 58;          // m/min w linii prostej (~4,5 km/h × objazd 1,3)
 const WALK_MAX = 500;         // maks. dojście / przesiadka piesza
 const WAIT_MAX = Infinity;   // połowa odstępu kursów, bez limitu: rzadkie linie nie są "za kwadrans"
-let iso = null;               // {origin, T, labels: Map(id -> {t, prev, ti, from, to, walk})}
-let isoT = 20;
 let isoGraph = null;
 let isoLayer = null;
 let isoRenderer = null;
@@ -2128,12 +2147,12 @@ let isoPathLayer = null;
 // poles = przystanki do ORIGIN_WALK_M w linii prostej: start trybu "wyjazd o godzinie" i trybu bez walk.bin.
 const ORIGIN_WALK_M = 2000;
 function isoOrigin() {
-  if (stopMode) {
-    return { name: stopMode.name, lat: stopMode.lat, lon: stopMode.lon,
-             poles: stopMode.poles.map(p => ({ id: p.id, t0: 0 })) };
+  if (state.stopMode) {
+    return { name: state.stopMode.name, lat: state.stopMode.lat, lon: state.stopMode.lon,
+             poles: state.stopMode.poles.map(p => ({ id: p.id, t0: 0 })) };
   }
-  if (radiusCircle) {
-    const c = radiusCircle.getLatLng();
+  if (state.radiusCircle) {
+    const c = state.radiusCircle.getLatLng();
     const poles = STOPS.map(x => ({ id: x.id, d: haversineMeters(c.lat, c.lng, x.lat, x.lon) }))
       .filter(x => x.d <= ORIGIN_WALK_M).map(x => ({ id: x.id, t0: x.d / WALK_MPM }));
     return { name: 'zaznaczony punkt', lat: c.lat, lon: c.lng, poles, point: true, walkMax: ORIGIN_WALK_M };
@@ -2583,8 +2602,8 @@ const mercY = (lat, s) => { const r = lat * Math.PI / 180; return (1 - Math.log(
 
 // rysuje zasięg na jednym kafelku: tylko ulice z tego fragmentu, jedno pociągnięcie na pasmo
 function drawIsoTile(canvas, coords, size) {
-  if (!iso || !iso.walk) return;
-  const W = WALK, t = iso.res.time, bands = iso.bands, T = iso.T;
+  if (!state.iso || !state.iso.walk) return;
+  const W = WALK, t = state.iso.res.time, bands = state.iso.bands, T = state.iso.T;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = size * dpr; canvas.height = size * dpr;
   const ctx = canvas.getContext('2d');
@@ -2647,12 +2666,12 @@ function drawIsoWalk() {
 
 
 // kolejne etapy dojazdu do przystanku (tryb ulic): piesze z geometrią ulic + przejazdy
-function walkLegs(stopId, C = iso) { return walkLegsFrom(WALK.N + STOP_INDEX().get(stopId), C); }
+function walkLegs(stopId, C = state.iso) { return walkLegsFrom(WALK.N + STOP_INDEX().get(stopId), C); }
 
 // Etapy dojazdu do wierzchołka v (węzeł ulicy albo przystanek): przejścia piesze z geometrią
 // ulic i czasem, przejazdy. W trybie punktu doklejamy dojście z klikniętego miejsca.
 // C = kontekst obliczenia: `iso` (mapa zasięgu) albo `reach` (dojazdy do celów), oba {o, res, walk1, csa}.
-function walkLegsFrom(v0, C = iso) {
+function walkLegsFrom(v0, C = state.iso) {
   const W = WALK, N = W.N, r0 = C.res;
   // wynik dwuwarstwowy (typowy dzień): idziemy po warstwach, `id` zdejmuje numer warstwy
   const LM = r0.L ? r0.M : 0, r = r0.L || r0;
@@ -2834,7 +2853,7 @@ function chainPts(R, v) {
 }
 
 // etapy przed przystankiem k w trybie "wyjazd o godzinie": przejazdy i przesiadki piesze
-function csaLegs(k, X = iso) {
+function csaLegs(k, X = state.iso) {
   const C = X.csa, out = [];
   let g = 0;
   while (g++ < 60) {
@@ -2860,7 +2879,7 @@ function csaLegs(k, X = iso) {
   }
   return out;
 }
-function csaRideInfo(l, X = iso) {
+function csaRideInfo(l, X = state.iso) {
   const C = X.csa, key = META.conns.routes[C.tripsTab[2 * l.ti]], head = META.conns.heads[C.tripsTab[2 * l.ti + 1]];
   if (!l.pts) {   // przystanki pośrednie z połączeń tego kursu
     const seq = [l.from];
@@ -2887,11 +2906,7 @@ function isoBands(T) {
 // a zmiana czasu tylko filtruje i przerysowuje.
 const ISO_TMAX = 60;
 const REACH_T = 90;                            // typowy dzień: liczymy do 90 min (cele typu lotnisko)
-let isoMode = 'typical';                       // 'typical' | 'time'
 // Domyślnie dzień roboczy: przy ocenie miejsca liczą się dojazdy w tygodniu, nie dzisiejsza niedziela.
-let isoDay = 'w';
-let isoDate = null;
-let isoTime = null;            // tryb czasu: data ISO i minuty od północy
 const DAY_NAMES = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela / święto' };
 // Czekanie na przystanku = połowa odstępu kursów. waitP[pos]: odstęp z tego przystanku (hp), inaczej odstęp wariantu.
 function setTripWaits(tr, dt) {
@@ -2907,42 +2922,42 @@ function applyDayType(dt) {
 const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 
 async function recalcIso(o, T) {
-  if (WALK && isoMode === 'time' && timeModeAvailable()) {
-    if (!isoDate) isoDate = todayISO();
-    if (isoTime == null) isoTime = nowMinutes();
-    const r = await runIsoTime(o, ISO_TMAX, isoDate, isoTime);
+  if (WALK && state.isoMode === 'time' && timeModeAvailable()) {
+    if (!state.isoDate) state.isoDate = todayISO();
+    if (state.isoTime == null) state.isoTime = nowMinutes();
+    const r = await runIsoTime(o, ISO_TMAX, state.isoDate, state.isoTime);
     if (r) return { o, T, ...r, walk: true, mode: 'time', bands: isoBands(T) };
   }
   if (WALK) {
     const r = typicalRun(o);
     return { o, T, labels: r.labels, res: r.res, walk1: r.walk1, walk: true, mode: 'typical', bands: isoBands(T) };
   }
-  applyDayType(isoDay);
+  applyDayType(state.isoDay);
   return { o, T, labels: runIso(o, ISO_TMAX), walk: false, mode: 'typical', bands: isoBands(T) };
 }
 // Typowy dzień z danego miejsca (do REACH_T min). Wspólne dla mapy zasięgu i listy celów,
 // więc włączenie zasięgu po wybraniu miejsca nic już nie liczy. Pamiętamy ostatni wynik.
 let typicalCache = null;
 function typicalRun(o) {
-  const key = originKey(o) + '|' + isoDay;
-  applyDayType(isoDay);   // czekanie w opisie etapów (legsText) musi pasować do typu dnia
+  const key = originKey(o) + '|' + state.isoDay;
+  applyDayType(state.isoDay);   // czekanie w opisie etapów (legsText) musi pasować do typu dnia
   if (typicalCache && typicalCache.key === key) return typicalCache.r;
   const r = runIsoWalk(o, REACH_T);
   typicalCache = { key, r };
   return r;
 }
 function setIsoT(T) {
-  if (!iso) return;
-  iso.T = T;
-  iso.bands = isoBands(T);
-  if (iso.walk && isoLayer && isoLayer.redraw) isoLayer.redraw(); else drawIso();
+  if (!state.iso) return;
+  state.iso.T = T;
+  state.iso.bands = isoBands(T);
+  if (state.iso.walk && isoLayer && isoLayer.redraw) isoLayer.redraw(); else drawIso();
   renderIsoChip();
 }
 // zmiana czasu z chipa (− / +): przerysuj, odśwież statystyki w panelu i adres
 function applyIsoT(T) {
-  if (!iso) return;
-  isoT = Math.max(10, Math.min(60, T));
-  setIsoT(isoT);
+  if (!state.iso) return;
+  state.isoT = Math.max(10, Math.min(60, T));
+  setIsoT(state.isoT);
   renderIsoBox();
   fitIsoView();
   syncURL(false);
@@ -2977,19 +2992,19 @@ function renderIsoChip() {
   updateSheet();
   const el = isoChipEl;
   if (!el) return;
-  const o = iso ? iso.o : isoOrigin();
+  const o = state.iso ? state.iso.o : isoOrigin();
   if (!o || !hasHeadways()) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
-  el.classList.toggle('on', !!iso);
-  if (!iso) {
-    el.innerHTML = `<button type="button" data-chip="on" title="Pokaż, gdzie dojedziesz w ${isoT} min">${ISO_ICON}Zasięg ${isoT} min</button>`;
+  el.classList.toggle('on', !!state.iso);
+  if (!state.iso) {
+    el.innerHTML = `<button type="button" data-chip="on" title="Pokaż, gdzie dojedziesz w ${state.isoT} min">${ISO_ICON}Zasięg ${state.isoT} min</button>`;
     return;
   }
-  const ctx = iso.mode === 'time' ? `wyjście ${fmt(isoTime)}` : DAY_SHORT[isoDay] || '';
+  const ctx = state.iso.mode === 'time' ? `wyjście ${fmt(state.isoTime)}` : DAY_SHORT[state.isoDay] || '';
   el.innerHTML = `<button type="button" data-chip="edit" title="Ustawienia zasięgu w panelu">${ISO_ICON}<span class="ic-ctx">${esc(ctx)}</span></button>`
-    + `<button type="button" class="ic-step" data-chip="-" aria-label="Krócej o 5 min"${iso.T <= 10 ? ' disabled' : ''}>${CHIP_MINUS}</button>`
-    + `<span class="ic-t" aria-live="polite">${iso.T} min</span>`
-    + `<button type="button" class="ic-step" data-chip="+" aria-label="Dłużej o 5 min"${iso.T >= 60 ? ' disabled' : ''}>${CHIP_PLUS}</button>`
+    + `<button type="button" class="ic-step" data-chip="-" aria-label="Krócej o 5 min"${state.iso.T <= 10 ? ' disabled' : ''}>${CHIP_MINUS}</button>`
+    + `<span class="ic-t" aria-live="polite">${state.iso.T} min</span>`
+    + `<button type="button" class="ic-step" data-chip="+" aria-label="Dłużej o 5 min"${state.iso.T >= 60 ? ' disabled' : ''}>${CHIP_PLUS}</button>`
     + `<i class="ic-sep" aria-hidden="true"></i>`
     + `<button type="button" class="ic-x" data-chip="off" title="Wyłącz zasięg (Esc)" aria-label="Wyłącz zasięg">${CHIP_X}</button>`;
 }
@@ -3001,7 +3016,7 @@ function onIsoChip(e) {
   const a = b.dataset.chip;
   if (a === 'on') computeIso();
   else if (a === 'off') { clearIso(); renderIsoBox(); syncURL(true); }
-  else if (a === '-' || a === '+') applyIsoT((iso ? iso.T : isoT) + (a === '+' ? 5 : -5));
+  else if (a === '-' || a === '+') applyIsoT((state.iso ? state.iso.T : state.isoT) + (a === '+' ? 5 : -5));
   else if (a === 'edit') document.getElementById('iso-box')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
@@ -3009,21 +3024,21 @@ async function computeIso() {
   const o = isoOrigin();
   if (!o) return;
   // wybrana linia i podgląd zasłaniałyby obszar zasięgu
-  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
   clearPreview();
   if (WALK === null) {
     const box = document.getElementById('iso-box');
-    if (box && !iso) box.innerHTML = '<div class="iso-card"><div class="muted">Wczytuję sieć pieszą…</div></div>';
+    if (box && !state.iso) box.innerHTML = '<div class="iso-card"><div class="muted">Wczytuję sieć pieszą…</div></div>';
     await loadWalk();
     if (!isoOrigin()) return;
   }
   setPicking(false);
   ensureIsoPane();
   const token = ++isoToken;
-  const wasOn = !!iso;
-  const next = await recalcIso(o, isoT);
+  const wasOn = !!state.iso;
+  const next = await recalcIso(o, state.isoT);
   if (token !== isoToken) return;               // w międzyczasie zmieniono punkt/tryb
-  iso = next;
+  state.iso = next;
   restyleStops();
   drawIso();
   renderIsoBox();
@@ -3035,13 +3050,13 @@ async function computeIso() {
 // Gdy obszar zasięgu wychodzi poza widok — oddal/przesuń mapę (nigdy nie przybliżaj).
 // Prostokąt obszaru zasięgu: węzły ulic osiągalne w T (bez sieci pieszej — przystanki) i start.
 function isoBounds() {
-  let s = iso.o.lat, n = iso.o.lat, w = iso.o.lon, e = iso.o.lon;
+  let s = state.iso.o.lat, n = state.iso.o.lat, w = state.iso.o.lon, e = state.iso.o.lon;
   const add = (la, lo) => { if (la < s) s = la; if (la > n) n = la; if (lo < w) w = lo; if (lo > e) e = lo; };
-  if (iso.walk && WALK && iso.res && iso.res.time) {
-    const t = iso.res.time, nd = WALK.nodes, T = iso.T;
+  if (state.iso.walk && WALK && state.iso.res && state.iso.res.time) {
+    const t = state.iso.res.time, nd = WALK.nodes, T = state.iso.T;
     for (let i = 0; i < WALK.N; i++) if (t[i] <= T) add(nd[2 * i] / 1e6, nd[2 * i + 1] / 1e6);
   } else {
-    iso.labels.forEach((l, id) => { if (l.t <= iso.T) { const st = STOP_BY_ID.get(id); add(st.lat, st.lon); } });
+    state.iso.labels.forEach((l, id) => { if (l.t <= state.iso.T) { const st = STOP_BY_ID.get(id); add(st.lat, st.lon); } });
   }
   return L.latLngBounds([s, w], [n, e]);
 }
@@ -3049,7 +3064,7 @@ function isoBounds() {
 // Przybliżenie ułamkowe (co 0,05), żeby obszar wypełniał widok, a nie jego połowę; przyciski + − wracają do pełnych.
 // onlyOut: tylko oddal, gdy obszar się nie mieści (nie używane przy zmianie czasu ani włączeniu).
 function fitIsoView(onlyOut = false) {
-  if (!iso) return;
+  if (!state.iso) return;
   const b = isoBounds();
   if (!b.isValid()) return;
   if (onlyOut && viewBounds().contains(b)) return;
@@ -3075,18 +3090,18 @@ function ensureIsoPane() {
 }
 function drawIso() {
   removeIsoLayer();
-  if (!iso) return;
-  if (iso.walk) { drawIsoWalk(); return; }
+  if (!state.iso) return;
+  if (state.iso.walk) { drawIsoWalk(); return; }
   const circles = [];
   // od najdalszego pasma do najbliższego: bliższe malowane na wierzchu
-  [...iso.bands].reverse().forEach(b => {
-    if (iso.o.point) {
-      circles.push(L.circle([iso.o.lat, iso.o.lon], {
-        renderer: isoRenderer, radius: Math.min(b.hi * WALK_MPM, iso.o.walkMax), stroke: false,
+  [...state.iso.bands].reverse().forEach(b => {
+    if (state.iso.o.point) {
+      circles.push(L.circle([state.iso.o.lat, state.iso.o.lon], {
+        renderer: isoRenderer, radius: Math.min(b.hi * WALK_MPM, state.iso.o.walkMax), stroke: false,
         fillColor: b.color, fillOpacity: 1, interactive: false,
       }));
     }
-    iso.labels.forEach((lab, id) => {
+    state.iso.labels.forEach((lab, id) => {
       if (lab.t >= b.hi) return;   // pasma kończą się na iso.T
       const r = Math.min((b.hi - lab.t) * WALK_MPM, WALK_MAX);
       if (r < 25) return;
@@ -3100,8 +3115,8 @@ function drawIso() {
 }
 
 function clearIso() {
-  const was = !!iso;
-  iso = null;
+  const was = !!state.iso;
+  state.iso = null;
   removePointHover();
   removeIsoLayers();
   if (was) { restyleStops(); renderTargetBox(); }
@@ -3111,18 +3126,18 @@ function clearIso() {
 // najlepszy (najszybszy) słupek o tej nazwie — czas dotarcia do przystanku
 function bestLabel(ids) {
   let best = null, bid = null;
-  ids.forEach(id => { const l = iso && iso.labels.get(id); if (l && l.t <= iso.T && (!best || l.t < best.t)) { best = l; bid = id; } });
+  ids.forEach(id => { const l = state.iso && state.iso.labels.get(id); if (l && l.t <= state.iso.T && (!best || l.t < best.t)) { best = l; bid = id; } });
   return best ? { id: bid, lab: best } : null;
 }
 
 function isoLegs(id) {
-  if (iso.walk) return walkLegs(id);
+  if (state.iso.walk) return walkLegs(id);
   const legsA = isoLegsApprox(id);
-  if (iso.o.point) {
+  if (state.iso.o.point) {
     let first = id;
-    for (let cur = id, g = 0; cur && g++ < 50; ) { const l = iso.labels.get(cur); if (!l || l.origin) { first = cur; break; } cur = l.prev; }
-    const st = STOP_BY_ID.get(first), lab = iso.labels.get(first);
-    if (st && lab) legsA.unshift({ walk: true, pts: [[iso.o.lat, iso.o.lon], [st.lat, st.lon]], min: lab.t });
+    for (let cur = id, g = 0; cur && g++ < 50; ) { const l = state.iso.labels.get(cur); if (!l || l.origin) { first = cur; break; } cur = l.prev; }
+    const st = STOP_BY_ID.get(first), lab = state.iso.labels.get(first);
+    if (st && lab) legsA.unshift({ walk: true, pts: [[state.iso.o.lat, state.iso.o.lon], [st.lat, st.lon]], min: lab.t });
   }
   return legsA;
 }
@@ -3130,7 +3145,7 @@ function isoLegsApprox(id) {
   const legs = [];
   let cur = id, guard = 0;
   while (cur && guard++ < 50) {
-    const l = iso.labels.get(cur);
+    const l = state.iso.labels.get(cur);
     if (!l || l.origin) break;
     legs.unshift({ ...l, at: cur });   // at = przystanek końca etapu (to = indeks w kursie)
     cur = l.prev;
@@ -3155,7 +3170,7 @@ function altLines(l) {
   const dmin = Math.min(d0, ...out.values());
   return [...out].filter(([, d]) => d <= dmin + rideSlack(dmin)).map(([key]) => key).slice(0, 3);
 }
-function legsText(legs, C = iso) {
+function legsText(legs, C = state.iso) {
   const parts = [];
   const nm = id => esc(STOP_BY_ID.get(id)?.name || '');
   legs.forEach(l => {
@@ -3184,16 +3199,16 @@ function legsText(legs, C = iso) {
 }
 
 function isoCardLine(s, sibs) {
-  if (!iso) return '';
+  if (!state.iso) return '';
   const b = bestLabel([s.id, ...sibs.map(x => x.id)]);
-  if (!b) return `<div class="sh-iso">Poza zasięgiem ${iso.T} min</div>`;
+  if (!b) return `<div class="sh-iso">Poza zasięgiem ${state.iso.T} min</div>`;
   if (b.lab.origin) {
-    return iso.o.point ? `<div class="sh-iso"><b>${Math.max(1, Math.round(b.lab.t))} min</b> pieszo</div>`
+    return state.iso.o.point ? `<div class="sh-iso"><b>${Math.max(1, Math.round(b.lab.t))} min</b> pieszo</div>`
                        : `<div class="sh-iso"><b>Start</b></div>`;
   }
   drawIsoPath(b.id);
   const legs = isoLegs(b.id), rides = legs.filter(l => !l.walk).length;
-  return `<div class="sh-iso"><b>${Math.round(b.lab.t)} min</b> stąd${iso.csa ? ` · na miejscu ${fmt(Math.round(iso.csa.t0 + b.lab.t))}` : ''}`
+  return `<div class="sh-iso"><b>${Math.round(b.lab.t)} min</b> stąd${state.iso.csa ? ` · na miejscu ${fmt(Math.round(state.iso.csa.t0 + b.lab.t))}` : ''}`
     + (rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : '')
     + `<div class="sh-legs">${legsText(legs)}</div></div>`;
 }
@@ -3208,13 +3223,13 @@ const walkStyle = [
 function clearIsoPath() {
   if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
 }
-function drawLegs(legs, tail, C = iso) {
+function drawLegs(legs, tail, C = state.iso) {
   clearIsoPath();
   const parts = legLayers(legs, tail, C);
   if (parts.length) isoPathLayer = L.layerGroup(parts).addTo(map);
 }
 // warstwy trasy: przejazdy w kolorach linii, na wierzchu kropkowane przejścia piesze
-function legLayers(legs, tail, C = iso) {
+function legLayers(legs, tail, C = state.iso) {
   const parts = [];
   if (tail) legs = legs.concat([{ walk: true, pts: tail }]);
   const walks = [];
@@ -3247,43 +3262,43 @@ function renderIsoBox() {
   renderIsoChip();
   const box = document.getElementById('iso-box');
   if (!box) return;
-  const o = iso ? iso.o : isoOrigin();
+  const o = state.iso ? state.iso.o : isoOrigin();
   if (!o) { box.innerHTML = ''; return; }
   const hasHw = Object.values(ROUTES).some(r => (r.trips || []).some(t => t && t.hw));
   if (!hasHw) { box.innerHTML = ''; return; }
-  if (!iso) {
+  if (!state.iso) {
     box.innerHTML = `<button type="button" class="iso-start" data-iso="on">
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>
-      Gdzie dojadę w ${isoT} min${o.point ? ' stąd' : ''}?</button>`;
+      Gdzie dojadę w ${state.isoT} min${o.point ? ' stąd' : ''}?</button>`;
     return;
   }
-  if (!o.poles.length && !(iso.walk && o.point)) {
+  if (!o.poles.length && !(state.iso.walk && o.point)) {
     box.innerHTML = `<div class="iso-card"><div class="iso-top"><h3>Zasięg</h3><button type="button" class="link-btn" data-iso="off">Wyłącz</button></div>
       <div class="muted" style="margin-top:6px">W odległości ${o.walkMax / 1000} km od tego miejsca nie ma żadnego przystanku.</div></div>`;
     return;
   }
   // statystyki: przystanki (po nazwie) w każdym paśmie
   const bestByName = new Map();
-  iso.labels.forEach((l, id) => {
-    if (l.t > iso.T) return;
+  state.iso.labels.forEach((l, id) => {
+    if (l.t > state.iso.T) return;
     const st = STOP_BY_ID.get(id);
     const cur = bestByName.get(st.name);
     if (!cur || l.t < cur.t) bestByName.set(st.name, { t: l.t, id, st });
   });
-  const reached = [...bestByName.values()].filter(x => !(iso.labels.get(x.id).origin && !o.point));
-  const counts = iso.bands.map(b => reached.filter(x => x.t >= b.lo && x.t < b.hi).length);
-  counts[counts.length - 1] += reached.filter(x => x.t === iso.T).length;
+  const reached = [...bestByName.values()].filter(x => !(state.iso.labels.get(x.id).origin && !o.point));
+  const counts = state.iso.bands.map(b => reached.filter(x => x.t >= b.lo && x.t < b.hi).length);
+  counts[counts.length - 1] += reached.filter(x => x.t === state.iso.T).length;
   const far = reached
     .map(x => ({ ...x, d: haversineMeters(o.lat, o.lon, x.st.lat, x.st.lon) }))
     .sort((a, b) => b.d - a.d).slice(0, 5);
   const km = d => (d / 1000).toLocaleString('pl', { maximumFractionDigits: 1 }) + ' km';
   // czy w ogóle coś jedzie (inaczej "dojdziesz pieszo")
-  const anyRide = iso.mode === 'time' ? iso.rides > 0
-    : iso.walk ? reached.some(x => iso.res.kind[WALK.N + STOP_INDEX().get(x.id)] === 3)
-    : reached.some(x => iso.labels.get(x.id).ti != null);
+  const anyRide = state.iso.mode === 'time' ? state.iso.rides > 0
+    : state.iso.walk ? reached.some(x => state.iso.res.kind[WALK.N + STOP_INDEX().get(x.id)] === 3)
+    : reached.some(x => state.iso.labels.get(x.id).ti != null);
 
   // przełącznik trybu + parametry
-  const tm = iso.mode === 'time';
+  const tm = state.iso.mode === 'time';
   const modeHtml = timeModeAvailable() && WALK ? `<div class="seg" role="group" aria-label="Tryb">
       <button type="button" class="${tm ? '' : 'on'}" data-iso-mode="typical">Typowy dzień</button>
       <button type="button" class="${tm ? 'on' : ''}" data-iso-mode="time">Wyjazd o godzinie</button></div>` : '';
@@ -3291,32 +3306,32 @@ function renderIsoBox() {
   if (tm) {
     const days = [];
     for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(localISO(d)); }
-    const hh = String(Math.floor(isoTime / 60) % 24).padStart(2, '0'), mm = String(isoTime % 60).padStart(2, '0');
+    const hh = String(Math.floor(state.isoTime / 60) % 24).padStart(2, '0'), mm = String(state.isoTime % 60).padStart(2, '0');
     paramsHtml = '<div class="chips">' + days.map((d, i) => {
       const dd = new Date(d + 'T12:00');
       const label = i === 0 ? 'Dziś' : i === 1 ? 'Jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
-      return `<button type="button" class="chip${d === isoDate ? ' on' : ''}" data-iso-date="${d}">${label}</button>`;
+      return `<button type="button" class="chip${d === state.isoDate ? ' on' : ''}" data-iso-date="${d}">${label}</button>`;
     }).join('') + '</div>'
       + `<div class="iso-when"><label for="iso-time">Wyjście o</label><input type="time" id="iso-time" value="${hh}:${mm}" step="60">`
       + `<button type="button" class="link-btn" data-iso-now="1">teraz</button></div>`;
   } else {
     paramsHtml = '<div class="chips">' + Object.entries(DAY_NAMES).map(([k, v]) =>
-      `<button type="button" class="chip${k === isoDay ? ' on' : ''}" data-iso-day="${k}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('') + '</div>';
+      `<button type="button" class="chip${k === state.isoDay ? ' on' : ''}" data-iso-day="${k}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('') + '</div>';
   }
   const note = tm
-    ? `Prawdziwe odjazdy z rozkładu${iso.csa && iso.csa.approx ? ` (brak danych na ten dzień — rozkład z ${iso.csa.approx})` : ''}, ${TRANSFER_MIN} min zapasu na przesiadkę, dojście i przesiadki pieszo po ulicach z OpenStreetMap, 4,5 km/h. Bez korków i opóźnień.`
-    : `Typowy dzień (${DAY_NAMES[isoDay]}), 6:00–20:00. Wliczam średnie czekanie na przystanku (połowa odstępu kursów)${WALK ? ', dojście i przesiadki pieszo po ulicach i ścieżkach z OpenStreetMap, 4,5 km/h' : ` i przesiadki pieszo do ${WALK_MAX} m, w przybliżeniu (linia prosta × 1,3)`}.`;
+    ? `Prawdziwe odjazdy z rozkładu${state.iso.csa && state.iso.csa.approx ? ` (brak danych na ten dzień — rozkład z ${state.iso.csa.approx})` : ''}, ${TRANSFER_MIN} min zapasu na przesiadkę, dojście i przesiadki pieszo po ulicach z OpenStreetMap, 4,5 km/h. Bez korków i opóźnień.`
+    : `Typowy dzień (${DAY_NAMES[state.isoDay]}), 6:00–20:00. Wliczam średnie czekanie na przystanku (połowa odstępu kursów)${WALK ? ', dojście i przesiadki pieszo po ulicach i ścieżkach z OpenStreetMap, 4,5 km/h' : ` i przesiadki pieszo do ${WALK_MAX} m, w przybliżeniu (linia prosta × 1,3)`}.`;
 
   box.innerHTML = `<div class="iso-card">
     <div class="iso-top"><h3>Zasięg ${o.point ? 'z zaznaczonego miejsca' : `z przystanku ${esc(o.name)}`}</h3><button type="button" class="link-btn" data-iso="off" title="Wyłącz zasięg (Esc)">Wyłącz</button></div>
     ${modeHtml}${paramsHtml}
-    <div class="iso-row"><label for="iso-t">Czas</label><input type="range" id="iso-t" min="10" max="60" step="5" value="${iso.T}"><b>${iso.T} min</b></div>
+    <div class="iso-row"><label for="iso-t">Czas</label><input type="range" id="iso-t" min="10" max="60" step="5" value="${state.iso.T}"><b>${state.iso.T} min</b></div>
     <div class="iso-sum">${anyRide ? 'Dojedziesz' : 'Dojdziesz pieszo'} do <b>${reached.length}</b> ${reached.length === 1 ? 'przystanku' : 'przystanków'}, najdalej ${far.length ? km(far[0].d) : '—'} w linii prostej.</div>
-    ${tm && iso.rides === 0 ? '<div class="iso-next" id="iso-next">Sprawdzam najbliższy odjazd…</div>' : ''}
-    <div class="iso-legend">${iso.bands.map((b, i) =>
+    ${tm && state.iso.rides === 0 ? '<div class="iso-next" id="iso-next">Sprawdzam najbliższy odjazd…</div>' : ''}
+    <div class="iso-legend">${state.iso.bands.map((b, i) =>
       `<i style="background:${b.color}"></i><span>${b.lo}–${b.hi} min</span><span>${counts[i]} przyst.</span>`).join('')}</div>
-    <div class="iso-ramp" aria-hidden="true"><div class="ir-bar">${iso.bands.map(b => `<i style="background:${b.color}"></i>`).join('')}</div>
-      <div class="ir-lab"><span>0</span>${iso.bands.map((b, i) => `<span>${b.hi}${i === iso.bands.length - 1 ? ' min' : ''}</span>`).join('')}</div></div>
+    <div class="iso-ramp" aria-hidden="true"><div class="ir-bar">${state.iso.bands.map(b => `<i style="background:${b.color}"></i>`).join('')}</div>
+      <div class="ir-lab"><span>0</span>${state.iso.bands.map((b, i) => `<span>${b.hi}${i === state.iso.bands.length - 1 ? ' min' : ''}</span>`).join('')}</div></div>
     <div class="iso-tip">Stuknij miejsce na mapie — pokażę czas i trasę.</div>
     <div class="iso-next iso-hint" style="margin:10px 0 0"><b>Kliknij miejsce na mapie</b> — pokażę czas i trasę${COARSE ? '' : ' (albo tylko najedź kursorem)'}, a „Sprawdź to miejsce” w dymku zrobi z niego nowy start. Zasięg zostaje włączony.</div>
     <div class="muted" style="margin-top:10px">${note}</div>
@@ -3324,16 +3339,16 @@ function renderIsoBox() {
   const inp = document.getElementById('iso-t');
   let raf = 0;
   inp.addEventListener('input', () => {
-    isoT = +inp.value;
-    inp.nextElementSibling.textContent = isoT + ' min';
+    state.isoT = +inp.value;
+    inp.nextElementSibling.textContent = state.isoT + ' min';
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => setIsoT(isoT));
+    raf = requestAnimationFrame(() => setIsoT(state.isoT));
   });
   // po puszczeniu suwaka: przelicz od razu (bez czekania na klatkę) i odśwież statystyki
   inp.addEventListener('change', () => {
     cancelAnimationFrame(raf);
-    isoT = +inp.value;
-    setIsoT(isoT);
+    state.isoT = +inp.value;
+    setIsoT(state.isoT);
     renderIsoBox();
     fitIsoView();
     syncURL(false);
@@ -3342,16 +3357,16 @@ function renderIsoBox() {
   const ti = document.getElementById('iso-time');
   if (ti) ti.addEventListener('change', () => {
     const [h, m] = ti.value.split(':').map(Number);
-    if (Number.isFinite(h) && Number.isFinite(m)) { isoTime = h * 60 + m; computeIso(); }
+    if (Number.isFinite(h) && Number.isFinite(m)) { state.isoTime = h * 60 + m; computeIso(); }
   });
-  if (tm && iso.rides === 0) fillNextDeparture(o);
+  if (tm && state.iso.rides === 0) fillNextDeparture(o);
 }
 
 // gdy w limicie czasu nic nie odjeżdża: najbliższy odjazd z przystanków startowych (z deps/)
 async function fillNextDeparture(o) {
   const el0 = document.getElementById('iso-next');
-  if (!el0 || !iso || !iso.csa) return;
-  const SI = STOP_INDEX(), prof = profileFor(isoDate);
+  if (!el0 || !state.iso || !state.iso.csa) return;
+  const SI = STOP_INDEX(), prof = profileFor(state.isoDate);
   const starts = o.point
     ? o.poles.filter(p => p.tw != null && p.tw <= 20).map(p => ({ st: STOP_BY_ID.get(p.id), tw: p.tw }))
     : o.poles.map(p => ({ st: STOP_BY_ID.get(p.id), tw: 0 }));
@@ -3360,7 +3375,7 @@ async function fillNextDeparture(o) {
   let best = null;
   starts.forEach(({ st, tw }) => cells.forEach(cell => Object.entries(cell[st.id] || {}).forEach(([key, arr]) => arr.forEach(e => {
     (e.t[e.p[prof.p]] || []).forEach(m => {
-      if (m >= isoTime + tw && (!best || m < best.m)) best = { m, key, h: e.h, name: st.name, tw };
+      if (m >= state.isoTime + tw && (!best || m < best.m)) best = { m, key, h: e.h, name: st.name, tw };
     });
   }))));
   const el = document.getElementById('iso-next');
@@ -3368,7 +3383,7 @@ async function fillNextDeparture(o) {
   if (!best) {
     // kolejne dni (do tygodnia): pierwszy odjazd danego dnia
     for (let i = 1; i <= 7 && !best; i++) {
-      const d = new Date(isoDate + 'T12:00'); d.setDate(d.getDate() + i);
+      const d = new Date(state.isoDate + 'T12:00'); d.setDate(d.getDate() + i);
       const date = localISO(d), pr = profileFor(date);
       if (!pr) continue;
       starts.forEach(({ st, tw }) => cells.forEach(cell => Object.entries(cell[st.id] || {}).forEach(([key, arr]) => arr.forEach(e => {
@@ -3378,7 +3393,7 @@ async function fillNextDeparture(o) {
       }))));
     }
     if (!best) { el.innerHTML = '<b>Stąd w najbliższym tygodniu nic nie odjeżdża.</b>'; return; }
-    const tomorrow = (() => { const d = new Date(isoDate + 'T12:00'); d.setDate(d.getDate() + 1); return localISO(d); })();
+    const tomorrow = (() => { const d = new Date(state.isoDate + 'T12:00'); d.setDate(d.getDate() + 1); return localISO(d); })();
     const dd = new Date(best.date + 'T12:00');
     const dayLabel = best.date === tomorrow ? 'jutro' : `${DOW[dd.getDay()]} ${dd.getDate()}.${String(dd.getMonth() + 1).padStart(2, '0')}`;
     const at = Math.max(0, Math.round(best.m - best.tw - 2));
@@ -3386,8 +3401,8 @@ async function fillNextDeparture(o) {
       + ` z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-goto="${best.date},${at}">Pokaż ${dayLabel} od ${fmt(at)}</button>`;
     return;
   }
-  const wait = best.m - isoTime;
-  el.innerHTML = `W ciągu ${iso.T} min nic stąd nie odjeżdża. <b>Najbliższy odjazd: ${esc(best.key.split('|')[0])} o ${fmt(best.m)}</b>`
+  const wait = best.m - state.isoTime;
+  el.innerHTML = `W ciągu ${state.iso.T} min nic stąd nie odjeżdża. <b>Najbliższy odjazd: ${esc(best.key.split('|')[0])} o ${fmt(best.m)}</b>`
     + ` (${zaMin(wait)}) z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-at="${Math.max(0, Math.round(best.m - best.tw - 2))}">Wyjdź o ${fmt(Math.max(0, Math.round(best.m - best.tw - 2)))}</button>`;
 }
 
@@ -3396,7 +3411,7 @@ let pointHoverLayer = null;
 let pointRaf = 0;
 
 // najszybciej osiągalny węzeł w promieniu R: czas dojścia do węzła + dojście od niego do punktu
-function bestReachableNode(lat, lon, R, t = iso.res.time) {
+function bestReachableNode(lat, lon, R, t = state.iso.res.time) {
   const W = WALK, cy = Math.floor(lat / W.GC), cx = Math.floor(lon / W.GC);
   let best = null;
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
@@ -3434,19 +3449,19 @@ function routeTo(C, lat, lon, R = 200) {
   return { t: nn.t, legs, lines, rides: lines.length, walkMin };
 }
 function pointHover(ll) {
-  if (!iso || !iso.walk || stopHoverOn) return hidePointHover();
+  if (!state.iso || !state.iso.walk || stopHoverOn) return hidePointHover();
   // przy otwartym dymku celu karta hovera w tym samym miejscu tylko by go dublowała
-  if (target && targetPop && targetPop.isOpen()
-      && map.latLngToContainerPoint([target.lat, target.lon]).distanceTo(map.latLngToContainerPoint(ll)) < 90) return hidePointHover();
-  const r = routeTo(iso, ll.lat, ll.lng, 150);
-  if (!r || !(r.t <= iso.T)) return hidePointHover();
+  if (state.target && targetPop && targetPop.isOpen()
+      && map.latLngToContainerPoint([state.target.lat, state.target.lon]).distanceTo(map.latLngToContainerPoint(ll)) < 90) return hidePointHover();
+  const r = routeTo(state.iso, ll.lat, ll.lng, 150);
+  if (!r || !(r.t <= state.iso.T)) return hidePointHover();
   const t = r.t, legs = r.legs;
   drawLegs(legs);
   const rides = r.rides;
   const cp = map.latLngToContainerPoint(ll), mw = map.getSize().x;
   const below = cp.y < 150, side = cp.x < 150 ? ' al' : cp.x > mw - 150 ? ' ar' : '';
   const html = `<div class="sh${below ? ' below' : ''}${side}" style="--sh-c:#184f95"><div class="sh-dot" style="width:10px;height:10px"></div>
-    <div class="sh-tip sh-tip-pt wide"><div class="sh-iso" style="margin:0;padding:0;border:0"><b>${Math.max(1, Math.round(t))} min</b> stąd${iso.csa ? ` · na miejscu ${fmt(Math.round(iso.csa.t0 + t))}` : ''}${rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : ''}</div>
+    <div class="sh-tip sh-tip-pt wide"><div class="sh-iso" style="margin:0;padding:0;border:0"><b>${Math.max(1, Math.round(t))} min</b> stąd${state.iso.csa ? ` · na miejscu ${fmt(Math.round(state.iso.csa.t0 + t))}` : ''}${rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : ''}</div>
     <div class="sh-legs">${legsText(legs)}</div></div></div>`;
   const icon = L.divIcon({ className: '', iconSize: [0, 0], html });
   if (pointHoverLayer) pointHoverLayer.setLatLng(ll).setIcon(icon);
@@ -3477,7 +3492,7 @@ function hideStopHover() {
 
 function clearPick() {
   if (clickMarker) { map.removeLayer(clickMarker); clickMarker = null; }
-  if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
+  if (state.radiusCircle) { map.removeLayer(state.radiusCircle); state.radiusCircle = null; }
   clearPoleLabels();
 }
 
@@ -3510,13 +3525,11 @@ function hotPole(c) {
 // (tu 39 min, tam 24 min) wystarczy jedno kliknięcie. Zasięg i cel zostają.
 // ---------------------------------------------------------------------------
 const placeHist = [];
-let restoringPlace = false;
-let pointLabel = null;   // adres z wyszukiwarki dla wybranego punktu (przeciągnięcie pinezki go kasuje)
 function currentPlace() {
-  if (stopMode) return { stopId: stopMode.id, lat: stopMode.lat, lon: stopMode.lon, name: stopMode.name };
-  if (radiusCircle) {
-    const c = radiusCircle.getLatLng();
-    if (pointLabel) return { lat: c.lat, lon: c.lng, name: pointLabel, label: pointLabel };
+  if (state.stopMode) return { stopId: state.stopMode.id, lat: state.stopMode.lat, lon: state.stopMode.lon, name: state.stopMode.name };
+  if (state.radiusCircle) {
+    const c = state.radiusCircle.getLatLng();
+    if (state.pointLabel) return { lat: c.lat, lon: c.lng, name: state.pointLabel, label: state.pointLabel };
     const n = nearestStopName(c.lat, c.lng);
     return { lat: c.lat, lon: c.lng, name: n ? `okolice: ${n}` : 'poprzednie miejsce' };
   }
@@ -3526,7 +3539,7 @@ const samePlaceRec = (a, b) => !!(a && b) && (a.stopId && b.stopId ? a.stopId ==
   : a.stopId || b.stopId ? false : haversineMeters(a.lat, a.lon, b.lat, b.lon) < 15);
 // next = miejsce, które zaraz zostanie wybrane (to samo miejsce nie trafia do historii)
 function rememberPlace(next) {
-  if (applyingState || restoringPlace) return;
+  if (state.applyingState || state.restoringPlace) return;
   const cur = currentPlace();
   if (!cur || (next && samePlaceRec(cur, next))) return;
   if (samePlaceRec(placeHist[placeHist.length - 1], cur)) return;
@@ -3547,11 +3560,11 @@ function backToPlace() {
   const p = placeHist.pop();
   if (!p) return;
   const st = p.stopId && STOP_BY_ID.get(p.stopId);
-  restoringPlace = true;
+  state.restoringPlace = true;
   try {
-    if (selectedRouteKey) selectRoute(selectedRouteKey);
+    if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
     if (st) selectStop(st); else selectPoint(L.latLng(p.lat, p.lon), { label: p.label });
-  } finally { restoringPlace = false; }
+  } finally { state.restoringPlace = false; }
   renderBackPlace();
   if (!viewBounds(0.15).contains([p.lat, p.lon])) panToVisible(L.latLng(p.lat, p.lon));
 }
@@ -3561,23 +3574,23 @@ document.getElementById('back-place').addEventListener('click', backToPlace);
 function addOriginMarker(latlng) {
   clickMarker = L.marker(latlng, { icon: clickIcon, draggable: true, keyboard: false, title: 'Przeciągnij, żeby zmienić miejsce', bubblingMouseEvents: false }).addTo(map);
   clickMarker.on('dragstart', () => { hideStopHover(); hidePointHover(); rememberPlace(); });
-  clickMarker.on('drag', e => { if (radiusCircle) radiusCircle.setLatLng(e.target.getLatLng()); });
-  clickMarker.on('dragend', e => { if (selectedRouteKey) selectRoute(selectedRouteKey); selectPoint(e.target.getLatLng(), { remembered: true }); });
+  clickMarker.on('drag', e => { if (state.radiusCircle) state.radiusCircle.setLatLng(e.target.getLatLng()); });
+  clickMarker.on('dragend', e => { if (state.selectedRouteKey) selectRoute(state.selectedRouteKey); selectPoint(e.target.getLatLng(), { remembered: true }); });
 }
 
 function selectPoint(latlng, opts = {}) {
   if (!opts.remembered) rememberPlace({ lat: latlng.lat, lon: latlng.lng });
-  pointLabel = opts.label || null;
-  sheetState = 'peek';
-  const keepIso = !!iso;
+  state.pointLabel = opts.label || null;
+  state.sheetState = 'peek';
+  const keepIso = !!state.iso;
   clearIso();
   showNotice('');
-  stopMode = null;
+  state.stopMode = null;
   document.getElementById('panel').classList.remove('stop-mode');
   clearPick();
   addOriginMarker(latlng);
-  radiusCircle = L.circle(latlng, {
-    radius: radiusMeters, color: '#c98a2c', weight: 1.5, fillColor: '#f0b862', fillOpacity: 0.12,
+  state.radiusCircle = L.circle(latlng, {
+    radius: state.radiusMeters, color: '#c98a2c', weight: 1.5, fillColor: '#f0b862', fillOpacity: 0.12,
     interactive: false
   }).addTo(map);
   recompute(latlng);
@@ -3612,27 +3625,27 @@ function selectStop(s) {
     .map(x => ({ ...x, dist: haversineMeters(s.lat, s.lon, x.lat, x.lon) }))
     .filter(x => x.dist <= 400)
     .sort((a, b) => a.dist - b.dist);
-  stopMode = { id: s.id, name: s.name, lat: s.lat, lon: s.lon, poles };
-  boardLimit = 8;
-  sheetState = 'peek';
-  lastOutside = null;
+  state.stopMode = { id: s.id, name: s.name, lat: s.lat, lon: s.lon, poles };
+  state.boardLimit = 8;
+  state.sheetState = 'peek';
+  state.lastOutside = null;
   showNotice('');
-  pointReach = null;
+  state.pointReach = null;
   document.getElementById('panel').classList.add('stop-mode');
   clearPick();
   addOriginMarker(L.latLng(s.lat, s.lon));
   drawPoleLabels(poles);
-  lastNearby = poles;
+  state.lastNearby = poles;
   highlightStops(new Set(poles.map(x => x.id)));
-  if (selectedRouteKey && !poles.some(x => servesLine(x, selectedRouteKey))) {
-    selectRoute(selectedRouteKey);   // ponowny wybór = odznaczenie linii, której tu nie ma
+  if (state.selectedRouteKey && !poles.some(x => servesLine(x, state.selectedRouteKey))) {
+    selectRoute(state.selectedRouteKey);   // ponowny wybór = odznaczenie linii, której tu nie ma
   }
   renderStopPanel();
   document.getElementById('panel').scrollTop = 0;
   renderBackPlace();
   updateSheet();
   syncURL(true);
-  if (iso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego przystanku
+  if (state.iso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego przystanku
 }
 
 // Linia nocna = żaden wariant nie ma odstępu kursów w godz. 6–20 (w danych ZTP to dokładnie 6xx, 9xx, 62, 69)
@@ -3661,7 +3674,7 @@ function badgesHtml(stops, reach = null, stats = null) {
     lines.set(key, l);
     if (!reach || reach.get(s.id) !== null) okLines.add(key);
   }));
-  const dayWord = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' }[isoDay];
+  const dayWord = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' }[state.isoDay];
   const badge = key => {
     const l = lines.get(key), off = !okLines.has(key), night = isNight(key);
     const hw = night ? '' : hwText(key, stats);
@@ -3689,14 +3702,14 @@ function badgesHtml(stops, reach = null, stats = null) {
 // Widok przystanku: najpierw odjazdy (po to się klika przystanek), potem linie i dojazdy do celów
 function renderStopPanel() {
   clearPreview();
-  const { name, poles } = stopMode;
+  const { name, poles } = state.stopMode;
   const b = badgesHtml(poles);
   document.getElementById('panel-title').textContent = name;
   document.getElementById('panel-sub').textContent = `${b.count} ${linii(b.count)}`
     + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'nocna', 'nocne', 'nocnych')}` : '');
   const html = tabsHtml('stop', [['odjazdy', 'Odjazdy'], ['linie', `Linie · ${b.count}`], ['dojazdy', 'Dojazdy']])
     + tabPane('stop', 'odjazdy', '<div id="target-box"></div>'
-      + `<button type="button" class="link-btn" data-around="1">Pokaż linie w promieniu ${radiusMeters} m od tego przystanku</button>`
+      + `<button type="button" class="link-btn" data-around="1">Pokaż linie w promieniu ${state.radiusMeters} m od tego przystanku</button>`
       + '<div id="iso-box"></div>'
       + '<div class="ld-sec"><h3>Najbliższe odjazdy</h3><div id="board"><div class="muted">Wczytuję…</div></div></div>')
     + tabPane('stop', 'linie', `<div id="lines-box">${b.html}</div><div id="line-detail"></div>`)
@@ -3715,13 +3728,13 @@ function renderStopPanel() {
 let boardToken = 0;
 async function renderBoard() {
   const el = document.getElementById('board');
-  if (!el || !stopMode) return;
+  if (!el || !state.stopMode) return;
   if (!META || !META.calendar) {
     el.innerHTML = '<div class="muted">Odjazdy są dostępne tylko dla pełnych danych (stops_data.json + katalog deps/).</div>';
     return;
   }
   const token = ++boardToken;
-  const poles = stopMode.poles;
+  const poles = state.stopMode.poles;
   const data = await Promise.all([...new Set(poles.map(cellOf))].map(loadCell));
   if (token !== boardToken || !document.getElementById('board')) return;
   const prof = profileFor(todayISO());
@@ -3753,7 +3766,7 @@ async function renderBoard() {
       : '<div class="muted">Dziś z tego przystanku nic nie odjeżdża.</div>');
     return;
   }
-  const shown = items.slice(0, boardLimit), rest = items.length - shown.length;
+  const shown = items.slice(0, state.boardLimit), rest = items.length - shown.length;
   const codes = new Set(poles.map(p => p.c).filter(Boolean));
   const plTitle = 'Numer przystanku z tablicy ZTP — taki sam jak etykieta przy przystanku na mapie';
   board.innerHTML = rareHtml + (prof.approx ? `<div class="muted" style="margin-bottom:6px">Brak danych na dziś — rozkład z ${dmy(prof.approx)}.</div>` : '') +
@@ -3768,36 +3781,34 @@ async function renderBoard() {
     + (rest > 0 ? `<button type="button" class="link-btn more-btn" data-board-more="1">Pokaż więcej (jeszcze ${nDeps(rest)} w ciągu 3 h)</button>`
                 : items.length > 16 ? '<div class="muted" style="margin-top:8px;text-align:center">To wszystkie odjazdy w ciągu 3 h.</div>' : '');
 }
-let boardLimit = 16;
-setInterval(() => { if (stopMode) renderBoard(); }, 60000);
+setInterval(() => { if (state.stopMode) renderBoard(); }, 60000);
 
 // ---------------------------------------------------------------------------
 // Stan w adresie strony (#s=przystanek, #p=punkt&r=promień, l=linia, iso=minuty…):
 // link da się udostępnić, a "Wstecz" w przeglądarce wraca do poprzedniego widoku.
 // ---------------------------------------------------------------------------
-let applyingState = false;
 let syncTimer = 0;
 let syncPush = false;
 function stateHash() {
   const p = new URLSearchParams();
-  if (stopMode) p.set('s', stopMode.id);
-  else if (radiusCircle) {
-    const c = radiusCircle.getLatLng();
+  if (state.stopMode) p.set('s', state.stopMode.id);
+  else if (state.radiusCircle) {
+    const c = state.radiusCircle.getLatLng();
     p.set('p', `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`);
-    p.set('r', radiusMeters);
+    p.set('r', state.radiusMeters);
   }
-  if (iso) {
-    p.set('iso', iso.T);
-    if (iso.mode === 'time') { p.set('d', isoDate); p.set('t', fmt(isoTime)); } else p.set('dzien', isoDay);
-  } else if (selectedRouteKey) p.set('l', selectedRouteKey);
-  if (!iso && isoDay !== 'w' && (stopMode || radiusCircle)) p.set('dzien', isoDay);
-  if (target) p.set('cel', `${target.lat.toFixed(5)},${target.lon.toFixed(5)}`);
+  if (state.iso) {
+    p.set('iso', state.iso.T);
+    if (state.iso.mode === 'time') { p.set('d', state.isoDate); p.set('t', fmt(state.isoTime)); } else p.set('dzien', state.isoDay);
+  } else if (state.selectedRouteKey) p.set('l', state.selectedRouteKey);
+  if (!state.iso && state.isoDay !== 'w' && (state.stopMode || state.radiusCircle)) p.set('dzien', state.isoDay);
+  if (state.target) p.set('cel', `${state.target.lat.toFixed(5)},${state.target.lon.toFixed(5)}`);
   const s = p.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/%7C/g, '|');   // czytelniejszy adres
   return s ? '#' + s : '';
 }
 // push = nowy wpis w historii (nowy widok), inaczej podmiana (zmiana parametru)
 function syncURL(push) {
-  if (applyingState) return;
+  if (state.applyingState) return;
   syncPush = syncPush || push;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
@@ -3809,11 +3820,11 @@ function syncURL(push) {
 function showEmpty() {
   clearIso();
   clearPick();
-  stopMode = null;
-  lastNearby = [];
-  pointReach = null;
+  state.stopMode = null;
+  state.lastNearby = [];
+  state.pointReach = null;
   highlightStops(new Set());
-  lastOutside = null;
+  state.lastOutside = null;
   document.getElementById('panel').classList.remove('stop-mode');
   document.getElementById('panel-title').textContent = isMobile() ? 'Stuknij dowolne miejsce na mapie' : 'Wybierz miejsce na mapie';
   document.getElementById('panel-sub').textContent = '';
@@ -3827,18 +3838,18 @@ function showEmpty() {
 }
 async function applyState() {
   const p = new URLSearchParams(location.hash.slice(1));
-  applyingState = true;
+  state.applyingState = true;
   try {
     clearIso();
     hideStopHover();
-    if (selectedRouteKey) selectRoute(selectedRouteKey);
-    isoDay = DAY_NAMES[p.get('dzien')] ? p.get('dzien') : 'w';
+    if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
+    state.isoDay = DAY_NAMES[p.get('dzien')] ? p.get('dzien') : 'w';
     // cel przed miejscem startu, żeby od razu policzyć do niego trasę
     const cel = (p.get('cel') || '').split(',').map(Number);
     if (cel.length === 2 && cel.every(Number.isFinite)) {
-      if (!target || Math.abs(target.lat - cel[0]) > 1e-5 || Math.abs(target.lon - cel[1]) > 1e-5) target = { lat: cel[0], lon: cel[1], label: null };
-    } else target = null;
-    targetPopOn = false;   // po „Wstecz” / z linku: cel bez dymka
+      if (!state.target || Math.abs(state.target.lat - cel[0]) > 1e-5 || Math.abs(state.target.lon - cel[1]) > 1e-5) state.target = { lat: cel[0], lon: cel[1], label: null };
+    } else state.target = null;
+    state.targetPopOn = false;   // po „Wstecz” / z linku: cel bez dymka
     // widok: miejsce ma być wyraźnie w środku mapy, nie przy krawędzi
     const inView = ll => viewBounds(0.2).contains(ll);
     const s = p.get('s') && STOP_BY_ID.get(p.get('s'));
@@ -3848,7 +3859,7 @@ async function applyState() {
       if (!inView([s.lat, s.lon])) setViewVisible(L.latLng(s.lat, s.lon), Math.max(map.getZoom(), 15));
     } else if (pt.length === 2 && pt.every(Number.isFinite)) {
       const r = +p.get('r');
-      if (r >= 200 && r <= 2000) { radiusMeters = Math.round(r / 100) * 100; radiusInput.value = radiusMeters; radiusVal.textContent = radiusMeters + ' m'; syncRseg(); }
+      if (r >= 200 && r <= 2000) { state.radiusMeters = Math.round(r / 100) * 100; radiusInput.value = state.radiusMeters; radiusVal.textContent = state.radiusMeters + ' m'; syncRseg(); }
       const ll = L.latLng(pt[0], pt[1]);
       selectPoint(ll);
       if (!inView(ll)) setViewVisible(ll, Math.max(map.getZoom(), 15));
@@ -3858,20 +3869,20 @@ async function applyState() {
     const l = p.get('l');
     if (l && ROUTES[l] && (s || pt.length === 2)) selectRoute(l);
     const T = +p.get('iso');
-    if (T && (stopMode || radiusCircle)) {
-      isoT = Math.min(60, Math.max(10, Math.round(T / 5) * 5));
+    if (T && (state.stopMode || state.radiusCircle)) {
+      state.isoT = Math.min(60, Math.max(10, Math.round(T / 5) * 5));
       const t = (p.get('t') || '').match(/^(\d{1,2}):(\d{2})$/);
       if (p.get('d') && /^\d{4}-\d{2}-\d{2}$/.test(p.get('d')) && t) {
-        isoMode = 'time'; isoDate = p.get('d'); isoTime = +t[1] * 60 + +t[2];
+        state.isoMode = 'time'; state.isoDate = p.get('d'); state.isoTime = +t[1] * 60 + +t[2];
       } else {
-        isoMode = 'typical';
-        if (DAY_NAMES[p.get('dzien')]) isoDay = p.get('dzien');
+        state.isoMode = 'typical';
+        if (DAY_NAMES[p.get('dzien')]) state.isoDay = p.get('dzien');
       }
       await computeIso();
     }
     renderTargetBox();
   } finally {
-    applyingState = false;
+    state.applyingState = false;
   }
 }
 
@@ -3887,12 +3898,11 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 
 // Czy do przystanku w okręgu da się dojść pieszo z zaznaczonego punktu (po ulicach z walk.bin).
 // Limit: 2,5 × promień drogi — dalej to już "naokoło przez pół gminy", traktujemy jak brak dojścia.
-let pointReach = null;   // Map stopId -> metry po ulicach | null (brak dojścia); null = nie liczono
 function computePointReach(latlng, nearby) {
   if (!WALK) return null;
   const nn = nearestNode(latlng.lat, latlng.lng);
   if (!nn) return null;
-  const limit = (radiusMeters * 2.5 + nn.d) / WALK_SPEED;
+  const limit = (state.radiusMeters * 2.5 + nn.d) / WALK_SPEED;
   const r = walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], limit, { walkOnly: true });
   const SI = STOP_INDEX(), out = new Map();
   nearby.forEach(st => {
@@ -3907,16 +3917,16 @@ function computePointReach(latlng, nearby) {
 function recompute(latlng) {
   const nearby = STOPS
     .map(s => ({...s, dist: haversineMeters(latlng.lat, latlng.lng, s.lat, s.lon)}))
-    .filter(s => s.dist <= radiusMeters)
+    .filter(s => s.dist <= state.radiusMeters)
     .sort((a, b) => a.dist - b.dist);
 
-  lastNearby = nearby;
-  pointReach = computePointReach(latlng, nearby);
+  state.lastNearby = nearby;
+  state.pointReach = computePointReach(latlng, nearby);
   if (WALK === null && META && META.walk) {
     // sieć piesza wczytuje się w tle; po wczytaniu przeliczamy ten sam punkt
-    loadWalk().then(() => { if (!stopMode && radiusCircle && radiusCircle.getLatLng().equals(latlng)) recompute(latlng); });
+    loadWalk().then(() => { if (!state.stopMode && state.radiusCircle && state.radiusCircle.getLatLng().equals(latlng)) recompute(latlng); });
   }
-  const unreach = new Set(pointReach ? nearby.filter(s => pointReach.get(s.id) === null).map(s => s.id) : []);
+  const unreach = new Set(state.pointReach ? nearby.filter(s => state.pointReach.get(s.id) === null).map(s => s.id) : []);
   highlightStops(new Set(nearby.map(s => s.id)), unreach);
 
   renderPanel(nearby);
@@ -3931,30 +3941,29 @@ function tabsHtml(kind, tabs) {
 }
 const tabPane = (kind, id, inner) => `<div class="tabp${ptab[kind] === id ? ' on' : ''}" data-tab="${id}">${inner}</div>`;
 function pickTab(id) {
-  ptab[stopMode ? 'stop' : 'point'] = id;
+  ptab[state.stopMode ? 'stop' : 'point'] = id;
   document.querySelectorAll('.ptabs [data-ptab]').forEach(b => { const on = b.dataset.ptab === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
   document.querySelectorAll('#results .tabp').forEach(el => el.classList.toggle('on', el.dataset.tab === id));
   if (isMobile()) {
-    if (sheetState === 'peek') setSheet('full');
+    if (state.sheetState === 'peek') setSheet('full');
     const tabs = document.querySelector('.ptabs');
     if (tabs && panelEl.scrollTop > tabs.offsetTop - 26) panelEl.scrollTop = tabs.offsetTop - 26;
   }
 }
 
-let lastOutside = null;   // najbliższe przystanki poza okręgiem, gdy w okręgu nie ma żadnego
 function renderPanel(nearby) {
   clearPreview();
   const title = document.getElementById('panel-title');
   const sub = document.getElementById('panel-sub');
   const results = document.getElementById('results');
-  lastOutside = null;
+  state.lastOutside = null;
 
   if (nearby.length === 0) {
     // bez ślepego zaułka: najbliższe przystanki poza okręgiem + dojazdy do celów i tak działają
-    const c = radiusCircle.getLatLng();
+    const c = state.radiusCircle.getLatLng();
     const near = nearestOutside(c);
-    lastOutside = near;
-    title.textContent = `Brak przystanków w promieniu ${radiusMeters} m`;
+    state.lastOutside = near;
+    title.textContent = `Brak przystanków w promieniu ${state.radiusMeters} m`;
     sub.textContent = near.length ? `Najbliższy: ${near[0].name}, ${fmtDist(near[0].walk ?? near[0].dist)}${near[0].walk != null ? ' pieszo' : ''}.`
       : 'W okolicy nie ma żadnego przystanku.';
     let html = '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>';
@@ -3964,7 +3973,7 @@ function renderPanel(nearby) {
         `<div class="stop-item clickable" role="button" tabindex="0" data-stop-id="${esc(g.id)}" title="Pokaż odjazdy z tego przystanku">`
         + `<div class="si-top"><b>${esc(g.name)}</b><span class="si-dist">${g.walk != null ? fmtDist(g.walk) + ' pieszo' : fmtDist(g.dist)}</span></div>`
         + `<div class="si-meta">${Math.round(g.dist)} m w linii prostej</div></div>`).join('') + '</div>'
-        + (need > radiusMeters ? `<button type="button" class="link-btn" style="margin-top:8px" data-radius-to="${need}">Pokaż linie w promieniu ${need} m</button>` : '');
+        + (need > state.radiusMeters ? `<button type="button" class="link-btn" style="margin-top:8px" data-radius-to="${need}">Pokaż linie w promieniu ${need} m</button>` : '');
     }
     results.innerHTML = html;
     results.classList.remove('tabbed');
@@ -3974,17 +3983,17 @@ function renderPanel(nearby) {
     return;
   }
 
-  const b = badgesHtml(nearby, pointReach, placeStatsFor(nearby));
+  const b = badgesHtml(nearby, state.pointReach, placeStatsFor(nearby));
   title.textContent = `${b.count} ${linii(b.count)} w pobliżu`;
   const nNames = new Set(nearby.map(s => s.name)).size;
-  sub.textContent = `${nNames} ${przystanki(nNames)} w promieniu ${radiusMeters} m`
+  sub.textContent = `${nNames} ${przystanki(nNames)} w promieniu ${state.radiusMeters} m`
     + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'linia nocna', 'linie nocne', 'linii nocnych')}` : '') + '.';
 
   // Jedna pozycja na nazwę przystanku (ZTP ma osobny słupek na każdy kierunek/peron)
   const byName = new Map();
   nearby.forEach(s => {
     const g = byName.get(s.name);
-    const wm = pointReach ? pointReach.get(s.id) : undefined;
+    const wm = state.pointReach ? state.pointReach.get(s.id) : undefined;
     if (g) {
       g.count++;
       if (wm != null && (g.walk == null || wm < g.walk)) { g.walk = wm; g.id = s.id; }
@@ -4043,7 +4052,7 @@ function nearestOutside(c) {
 // przyciski promienia na telefonie (300 m / 500 m / 1 km / 2 km)
 function syncRseg() {
   document.querySelectorAll('.rseg [data-r]').forEach(b => {
-    const on = +b.dataset.r === radiusMeters;
+    const on = +b.dataset.r === state.radiusMeters;
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', String(on));
   });
@@ -4053,24 +4062,24 @@ document.querySelector('.rseg').addEventListener('click', e => {
   if (b) setRadius(+b.dataset.r);
 });
 function setRadius(m, fromSlider) {
-  radiusMeters = Math.min(2000, Math.max(200, Math.round(m / 100) * 100));
-  if (!fromSlider) radiusInput.value = radiusMeters;
-  radiusVal.textContent = radiusMeters + ' m';
+  state.radiusMeters = Math.min(2000, Math.max(200, Math.round(m / 100) * 100));
+  if (!fromSlider) radiusInput.value = state.radiusMeters;
+  radiusVal.textContent = state.radiusMeters + ' m';
   syncRseg();
-  if (radiusCircle && !stopMode) {
-    radiusCircle.setRadius(radiusMeters);
-    recompute(radiusCircle.getLatLng());   // promień zmienia tylko listę linii; zasięg i dojazdy się nie zmieniają
+  if (state.radiusCircle && !state.stopMode) {
+    state.radiusCircle.setRadius(state.radiusMeters);
+    recompute(state.radiusCircle.getLatLng());   // promień zmienia tylko listę linii; zasięg i dojazdy się nie zmieniają
     syncURL(false);
   }
 }
 
 // Typ dnia (roboczy / sobota / niedziela) — wspólny dla częstotliwości, dojazdów do celów i zasięgu "typowy dzień"
 function setDayType(d) {
-  if (!DAY_NAMES[d] || d === isoDay) return;
-  isoDay = d;
-  reach = null; placeStats = null;
-  if (iso && iso.mode === 'typical') computeIso();
-  if (stopMode || radiusCircle) refreshPlace();
+  if (!DAY_NAMES[d] || d === state.isoDay) return;
+  state.isoDay = d;
+  state.reach = null; state.placeStats = null;
+  if (state.iso && state.iso.mode === 'typical') computeIso();
+  if (state.stopMode || state.radiusCircle) refreshPlace();
   syncURL(false);
 }
 
@@ -4096,22 +4105,20 @@ function removeMyPlace(i) {
 }
 const samePlace = (a, b) => a && b && Math.abs(a.lat - b.lat) < 2e-5 && Math.abs(a.lon - b.lon) < 2e-5;
 
-let reach = null;
-let placeStats = null;
 let placeToken = 0;
-function reachFor(o) { return { o, ...typicalRun(o), walk: true, mode: 'typical', day: isoDay }; }
+function reachFor(o) { return { o, ...typicalRun(o), walk: true, mode: 'typical', day: state.isoDay }; }
 // przystanki, z których liczymy częstotliwość: wybrany przystanek albo przystanki w okręgu z dojściem pieszo
 function placePoles() {
-  if (stopMode) return stopMode.poles;
-  return lastNearby.filter(s => !pointReach || pointReach.get(s.id) !== null);
+  if (state.stopMode) return state.stopMode.poles;
+  return state.lastNearby.filter(s => !state.pointReach || state.pointReach.get(s.id) !== null);
 }
 
 // Statystyki odjazdów z przystanków (deps/) dla reprezentatywnego dnia danego typu
 const statsDone = new Map();
 const statsPending = new Map();
-const statsKey = poles => isoDay + ':' + poles.map(p => p.id).sort().join(',');
+const statsKey = poles => state.isoDay + ':' + poles.map(p => p.id).sort().join(',');
 function placeStatsFor(stops) {
-  const poles = stopMode ? stops : stops.filter(s => !pointReach || pointReach.get(s.id) !== null);
+  const poles = state.stopMode ? stops : stops.filter(s => !state.pointReach || state.pointReach.get(s.id) !== null);
   return statsDone.get(statsKey(poles)) || null;
 }
 function repDate(day) {
@@ -4125,7 +4132,7 @@ function lineStats(poles) {
   const key = statsKey(poles);
   if (statsDone.has(key)) return Promise.resolve(statsDone.get(key));
   if (statsPending.has(key)) return statsPending.get(key);
-  const prof = profileFor(repDate(isoDay));
+  const prof = profileFor(repDate(state.isoDay));
   const p = Promise.all([...new Set(poles.map(cellOf))].map(loadCell)).then(cells => {
     if (!prof) return null;
     const per = new Map();
@@ -4154,9 +4161,9 @@ function lineStats(poles) {
 function applyLineStats() {
   const box = document.getElementById('lines-box');
   if (!box) return;
-  const stops = stopMode ? stopMode.poles : lastNearby;
+  const stops = state.stopMode ? state.stopMode.poles : state.lastNearby;
   if (!stops.length) return;
-  box.innerHTML = badgesHtml(stops, stopMode ? null : pointReach, placeStats).html;
+  box.innerHTML = badgesHtml(stops, state.stopMode ? null : state.pointReach, state.placeStats).html;
   updateBadgeSelection();
 }
 
@@ -4165,20 +4172,20 @@ function refreshPlace() {
   const o = isoOrigin();
   if (!o) return;
   const poles = placePoles();
-  placeStats = statsDone.get(statsKey(poles)) || null;
-  const fresh = reach && reach.day === isoDay && originKey(reach.o) === originKey(o);
-  if (!fresh) reach = null;
+  state.placeStats = statsDone.get(statsKey(poles)) || null;
+  const fresh = state.reach && state.reach.day === state.isoDay && originKey(state.reach.o) === originKey(o);
+  if (!fresh) state.reach = null;
   renderPlaceCard();
   renderTargetBox();
-  const needStats = !placeStats && META && META.calendar && poles.length;
+  const needStats = !state.placeStats && META && META.calendar && poles.length;
   if (!needStats && fresh) return;
   (async () => {
     const stP = needStats ? lineStats(poles) : null;
     if (WALK === null) await loadWalk();
     else await new Promise(r => setTimeout(r, 0));   // najpierw pinezka i panel na ekranie, potem liczenie (~40 ms)
     if (token !== placeToken) return;
-    if (WALK && !reach) reach = reachFor(o);
-    if (stP) placeStats = await stP;
+    if (WALK && !state.reach) state.reach = reachFor(o);
+    if (stP) state.placeStats = await stP;
     if (token !== placeToken) return;
     renderPlaceCard();
     if (stP) applyLineStats();
@@ -4222,14 +4229,14 @@ function verdictLevel(perHour, walkMin) {
 }
 // najbliższy przystanek pieszo z zaznaczonego punktu: {name, w (m), outside}
 function nearestWalk() {
-  if (stopMode) return null;
+  if (state.stopMode) return null;
   let best = null;
-  lastNearby.forEach(s => {
-    const w = pointReach ? pointReach.get(s.id) : s.dist * 1.3;
+  state.lastNearby.forEach(s => {
+    const w = state.pointReach ? state.pointReach.get(s.id) : s.dist * 1.3;
     if (w != null && (!best || w < best.w)) best = { name: s.name, w };
   });
-  if (!best && lastOutside && lastOutside.length) {
-    const g = lastOutside[0];
+  if (!best && state.lastOutside && state.lastOutside.length) {
+    const g = state.lastOutside[0];
     best = { name: g.name, w: g.walk ?? g.dist * 1.3, outside: true };
   }
   return best;
@@ -4240,19 +4247,19 @@ function renderPlaceHead() {
   if (!o) { el.innerHTML = ''; panelEl.classList.remove('has-head'); return; }
   panelEl.classList.add('has-head');
   const nw = nearestWalk();
-  const walkMin = stopMode ? 0 : nw ? Math.max(1, Math.round(nw.w / WALK_SPEED)) : null;
-  const st = placeStats;
+  const walkMin = state.stopMode ? 0 : nw ? Math.max(1, Math.round(nw.w / WALK_SPEED)) : null;
+  const st = state.placeStats;
   const hasData = META && META.calendar;
-  const noStops = !stopMode && !lastNearby.length;
+  const noStops = !state.stopMode && !state.lastNearby.length;
   // linie (jak w tytule: wszystkie w okręgu / na przystanku), nocne osobno
   const keys = new Set();
-  (stopMode ? stopMode.poles : lastNearby).forEach(s => s.lines.forEach(l => keys.add(`${l.ref}|${l.type}`)));
+  (state.stopMode ? state.stopMode.poles : state.lastNearby).forEach(s => s.lines.forEach(l => keys.add(`${l.ref}|${l.type}`)));
   const nDay = [...keys].filter(k => !isNight(k)).length, nNight = keys.size - nDay;
 
   let lvl = null, verdict;
   if (noStops) {
     if (walkMin == null || walkMin > 15) { lvl = 0; verdict = VERDICT[0]; }
-    else verdict = `W promieniu ${fmtDist(radiusMeters)} nie ma przystanku.`;
+    else verdict = `W promieniu ${fmtDist(state.radiusMeters)} nie ma przystanku.`;
   } else if (st) { lvl = verdictLevel(st.perHour, walkMin); verdict = VERDICT[lvl]; }
   else if (hasData && !placePoles().length) { lvl = verdictLevel(0, walkMin); verdict = VERDICT[lvl]; }
   else verdict = hasData ? 'Sprawdzam…' : '';
@@ -4264,7 +4271,7 @@ function renderPlaceHead() {
     tiles.push(st.perHour > 0 && n < 1 ? tile('&lt; 1', 'kurs na godzinę', 'W godz. 6–20, w jedną stronę')
       : tile(n, `${plural(n, 'kurs', 'kursy', 'kursów')} na godzinę`, 'W godz. 6–20, w jedną stronę, suma linii dziennych'));
   } else tiles.push(tile(noStops ? '0' : hasData ? '…' : '—', 'kursów na godzinę'));
-  if (stopMode) {
+  if (state.stopMode) {
     let top = null;
     if (st) st.per.forEach((v, k) => { if (!isNight(k) && v.maxPole && (!top || v.maxPole > top.v.maxPole)) top = { k, v }; });
     tiles.push(top ? tile(`co ${Math.max(1, Math.round(840 / top.v.maxPole))} min`, `najczęściej linia ${esc(top.k.split('|')[0])}`)
@@ -4274,7 +4281,7 @@ function renderPlaceHead() {
   }
   tiles.push(tile(`${nDay} ${linii(nDay)}`, nNight ? `+ ${nNight} ${plural(nNight, 'nocna', 'nocne', 'nocnych')}` : 'bez nocnych'));
 
-  const addr = !stopMode && pointLabel ? `<b class="ph-addr">${esc(pointLabel)}</b>` : '';
+  const addr = !state.stopMode && state.pointLabel ? `<b class="ph-addr">${esc(state.pointLabel)}</b>` : '';
   el.innerHTML = (nw || addr ? `<div class="ph-where">${addr}${nw ? `${nw.outside ? 'Najbliższy przystanek' : 'Okolice przystanku'} <b>${esc(nw.name)}</b>` : ''}</div>` : '')
     + (verdict ? `<div class="ph-verdict${lvl == null ? ' wait' : ''}">${esc(verdict)}</div>` : '')
     + (lvl != null ? `<div class="ph-meter" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i class="${i <= lvl ? 'on' : ''}"></i>`).join('')}</div>`
@@ -4288,17 +4295,17 @@ function renderPlaceCard() {
   if (!el) return;
   const o = isoOrigin();
   if (!o) { el.innerHTML = ''; return; }
-  const dayWord = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' }[isoDay];
+  const dayWord = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' }[state.isoDay];
   const facts = [];
-  if (!stopMode && lastNearby.length) {
+  if (!state.stopMode && state.lastNearby.length) {
     let best = null;
-    lastNearby.forEach(s => {
-      const w = pointReach ? pointReach.get(s.id) : s.dist * 1.3;
+    state.lastNearby.forEach(s => {
+      const w = state.pointReach ? state.pointReach.get(s.id) : s.dist * 1.3;
       if (w != null && (!best || w < best.w)) best = { s, w };
     });
     if (best) facts.push(`Najbliższy przystanek: <b>${esc(best.s.name)}</b>, ${fmtDist(best.w)} pieszo (${Math.max(1, Math.round(best.w / WALK_SPEED))} min)`);
   }
-  const st = placeStats;
+  const st = state.placeStats;
   if (st) {
     let top = null;
     st.per.forEach((v, k) => { if (!isNight(k) && v.maxPole && (!top || v.maxPole > top.v.maxPole)) top = { k, v }; });
@@ -4317,13 +4324,13 @@ function renderPlaceCard() {
   const all = [...myPlaces.map((p, i) => ({ ...p, id: 'm' + i, mine: i })), ...DESTS.map((p, i) => ({ ...p, id: 'f' + i }))];
   let destHtml;
   if (WALK === false) destHtml = '<div class="muted" style="margin-top:8px">Czasy dojazdu wymagają sieci pieszej (walk.bin).</div>';
-  else if (!reach) destHtml = '<div class="muted" style="margin-top:8px">Liczę czasy dojazdu…</div>';
+  else if (!state.reach) destHtml = '<div class="muted" style="margin-top:8px">Liczę czasy dojazdu…</div>';
   else {
     destHtml = `<div class="dests-h">Czas dojazdu ${dayWord}, z czekaniem na przystanku</div><div class="dests">` + all.map(d => {
-      const r = routeTo(reach, d.lat, d.lon);
+      const r = routeTo(state.reach, d.lat, d.lon);
       const ok = r && isFinite(r.t);
       const time = ok ? `${Math.max(1, Math.round(r.t))} min${r.rides ? '' : ' pieszo'}` : `ponad ${REACH_T} min`;
-      return `<div class="dest${samePlace(d, target) ? ' on' : ''}" role="button" tabindex="0" data-dest="${d.id}" title="Pokaż trasę na mapie">`
+      return `<div class="dest${samePlace(d, state.target) ? ' on' : ''}" role="button" tabindex="0" data-dest="${d.id}" title="Pokaż trasę na mapie">`
         + `<span class="dn">${d.mine != null ? '★ ' : ''}${esc(d.name)}</span>`
         + `<span class="dt${ok ? '' : ' far'}">${time}${d.mine != null ? `<button type="button" class="del" data-place-del="${d.mine}" title="Usuń z moich miejsc" aria-label="Usuń ${esc(d.name)} z moich miejsc">×</button>` : ''}</span>`
         + (ok && r.rides ? `<span class="dl">${routeSummary(r)}</span>` : '') + '</div>';
@@ -4332,10 +4339,10 @@ function renderPlaceCard() {
   el.innerHTML = `<div class="place-card">
     <div class="pc-top"><h3>Jak stąd dojedziesz</h3>
       <select id="day-type" aria-label="Typ dnia">${Object.entries(DAY_NAMES).map(([k, v]) =>
-        `<option value="${k}"${k === isoDay ? ' selected' : ''}>${v[0].toUpperCase() + v.slice(1)}</option>`).join('')}</select></div>
+        `<option value="${k}"${k === state.isoDay ? ' selected' : ''}>${v[0].toUpperCase() + v.slice(1)}</option>`).join('')}</select></div>
     ${facts.length ? `<ul class="pc-facts">${facts.map(f => `<li>${f}</li>`).join('')}</ul>` : ''}
     ${destHtml}
-    <div class="pc-actions"><button type="button" class="link-btn" data-pick-target="1">${pickingTarget ? 'Anuluj wskazywanie celu' : '+ Wskaż własny cel na mapie'}</button></div>
+    <div class="pc-actions"><button type="button" class="link-btn" data-pick-target="1">${state.pickingTarget ? 'Anuluj wskazywanie celu' : '+ Wskaż własny cel na mapie'}</button></div>
   </div>`;
 }
 
@@ -4343,8 +4350,6 @@ function renderPlaceCard() {
 // Cel podróży: klik na mapie (w trybie zasięgu albo po "Wskaż cel"), wiersz listy albo link (#cel=).
 // Trasa liczona z mapy zasięgu, jeśli jest włączona (także "wyjazd o godzinie"), inaczej z typowego dnia.
 // ---------------------------------------------------------------------------
-let target = null;
-let pickingTarget = false;
 let targetLayer = null;
 const targetIcon = L.divIcon({
   className: '',
@@ -4353,17 +4358,17 @@ const targetIcon = L.divIcon({
     <path d="M9 7.5v11M9 8h8l-2 3 2 3H9" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
   iconSize: [24, 34], iconAnchor: [12, 34],
 });
-const targetClickMode = () => pickingTarget || !!iso;
+const targetClickMode = () => state.pickingTarget || !!state.iso;
 function targetCtx() {
-  if (iso && iso.walk) return iso;
+  if (state.iso && state.iso.walk) return state.iso;
   const o = isoOrigin();
-  return reach && o && reach.day === isoDay && originKey(reach.o) === originKey(o) ? reach : null;
+  return state.reach && o && state.reach.day === state.isoDay && originKey(state.reach.o) === originKey(o) ? state.reach : null;
 }
 function setPicking(on) {
-  if (pickingTarget === !!on) return;
-  pickingTarget = !!on;
-  if (map) map.getContainer().classList.toggle('picking', pickingTarget);
-  showNotice(pickingTarget ? 'Kliknij cel podróży na mapie albo przystanek. Esc anuluje.' : '');
+  if (state.pickingTarget === !!on) return;
+  state.pickingTarget = !!on;
+  if (map) map.getContainer().classList.toggle('picking', state.pickingTarget);
+  showNotice(state.pickingTarget ? 'Kliknij cel podróży na mapie albo przystanek. Esc anuluje.' : '');
   renderPlaceCard();
 }
 function nearestStopName(lat, lon) {
@@ -4374,8 +4379,8 @@ function nearestStopName(lat, lon) {
 // opts.pop = dymek przy celu (klik w mapę), opts.stopId = cel to przystanek ("Sprawdź" otworzy przystanek)
 function setTarget(lat, lon, label, fromList, opts = {}) {
   const mine = myPlaces.find(p => samePlace(p, { lat, lon })) || DESTS.find(p => samePlace(p, { lat, lon }));
-  target = { lat, lon, label: label || (mine && mine.name) || null, stopId: opts.stopId || null };
-  targetPopOn = !!opts.pop;
+  state.target = { lat, lon, label: label || (mine && mine.name) || null, stopId: opts.stopId || null };
+  state.targetPopOn = !!opts.pop;
   setPicking(false);
   renderTargetBox();
   renderPlaceCard();
@@ -4384,29 +4389,29 @@ function setTarget(lat, lon, label, fromList, opts = {}) {
   const o = isoOrigin();
   const b = L.latLngBounds([[lat, lon]].concat(o ? [[o.lat, o.lon]] : []));
   if (!viewBounds(0.1).contains(b)) map.fitBounds(b, { ...fitPad(60), maxZoom: map.getZoom() });
-  if (!targetPopOn) document.getElementById('target-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if (!state.targetPopOn) document.getElementById('target-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 // Cel staje się nowym startem (zasięg zostaje włączony). Przystanek otwiera się jako przystanek.
 function targetAsOrigin() {
-  if (!target) return;
-  const t = target, st = t.stopId && STOP_BY_ID.get(t.stopId);
+  if (!state.target) return;
+  const t = state.target, st = t.stopId && STOP_BY_ID.get(t.stopId);
   clearTarget();
-  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
   if (st) selectStop(st); else selectPoint(L.latLng(t.lat, t.lon));
 }
 function clearTarget() {
-  target = null;
-  targetPopOn = false;
+  state.target = null;
+  state.targetPopOn = false;
   renderTargetBox();
   renderPlaceCard();
   syncURL(true);
 }
 function drawTarget(r, C) {
   if (targetLayer) { map.removeLayer(targetLayer); targetLayer = null; }
-  if (!target || !map) return;
+  if (!state.target || !map) return;
   const ok = r && r.legs && isFinite(r.t);
   const parts = ok ? legLayers(r.legs, null, C) : [];
-  const pin = L.marker([target.lat, target.lon], { icon: targetIcon, interactive: false, keyboard: false, zIndexOffset: 500 });
+  const pin = L.marker([state.target.lat, state.target.lon], { icon: targetIcon, interactive: false, keyboard: false, zIndexOffset: 500 });
   // czas dojazdu przy samej pinezce — widać go bez szukania w panelu
   if (r) pin.bindTooltip(ok ? `${Math.max(1, Math.round(r.t))} min` : `> ${C && C.mode === 'time' ? ISO_TMAX : REACH_T} min`,
     { permanent: true, direction: 'right', offset: [12, -18], className: 'term-label tgt-time' });
@@ -4415,11 +4420,10 @@ function drawTarget(r, C) {
 }
 // Dymek przy celu (po kliknięciu w mapę): czas dojazdu i "Sprawdź to miejsce" = nowy start jednym kliknięciem.
 // Dzięki temu klik w mapę przy włączonym zasięgu nie jest zagadką (cel czy nowe miejsce?) — pytamy na miejscu.
-let targetPopOn = false;
 let targetPop = null;
 let targetPopSync = false;
 function renderTargetPop(r, C, name) {
-  const want = targetPopOn && target && map && isoOrigin();
+  const want = state.targetPopOn && state.target && map && isoOrigin();
   if (!want) { closeTargetPop(); return; }
   const horizon = C && C.mode === 'time' ? ISO_TMAX : REACH_T;
   let head;
@@ -4433,13 +4437,13 @@ function renderTargetPop(r, C, name) {
     head = `<b>${Math.max(1, Math.round(r.t))} min</b> stąd${extra.length ? ` <span>· ${extra.join(' · ')}</span>` : ''}`;
   }
   const html = `<div class="tp-t">${head}</div><div class="tp-name">${esc(name)}</div>
-    <button type="button" class="tp-go" data-pop-origin="1">${target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce'}</button>`;
+    <button type="button" class="tp-go" data-pop-origin="1">${state.target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce'}</button>`;
   if (!targetPop) {
     // na telefonie dymek jest ukryty (cel pokazuje karta w arkuszu), więc bez przesuwania mapy pod niego
     targetPop = L.popup({ className: 'target-pop', offset: [0, -30], autoPan: !isMobile(), autoPanPadding: [40, 40], maxWidth: 260, closeOnEscapeKey: false });
     targetPop.on('remove', () => {
       map.getContainer().classList.remove('tpop-open');
-      if (!targetPopSync) targetPopOn = false;   // zamknięty przez użytkownika (×) — cel zostaje
+      if (!targetPopSync) state.targetPopOn = false;   // zamknięty przez użytkownika (×) — cel zostaje
     });
     // nasłuch na samym dymku: przycisk znika w trakcie kliknięcia, klik nie może dojść do mapy
     targetPop.on('add', () => {
@@ -4455,8 +4459,8 @@ function renderTargetPop(r, C, name) {
   }
   hidePointHover();
   targetPopSync = true;
-  const moved = !targetPop.isOpen() || !targetPop.getLatLng() || !targetPop.getLatLng().equals(L.latLng(target.lat, target.lon));
-  targetPop.setLatLng([target.lat, target.lon]).setContent(html);
+  const moved = !targetPop.isOpen() || !targetPop.getLatLng() || !targetPop.getLatLng().equals(L.latLng(state.target.lat, state.target.lon));
+  targetPop.setLatLng([state.target.lat, state.target.lon]).setContent(html);
   if (!targetPop.isOpen()) targetPop.openOn(map); else if (moved) targetPop.update();
   targetPopSync = false;
   map.getContainer().classList.add('tpop-open');
@@ -4469,11 +4473,11 @@ function closeTargetPop() {
 }
 function renderTargetBox(saving = false) {
   const el = document.getElementById('target-box');
-  if (!target) { drawTarget(); closeTargetPop(); if (el) el.innerHTML = ''; return; }
+  if (!state.target) { drawTarget(); closeTargetPop(); if (el) el.innerHTML = ''; return; }
   const C = targetCtx(), o = isoOrigin();
-  const r = C && o ? routeTo(C, target.lat, target.lon) : null;
+  const r = C && o ? routeTo(C, state.target.lat, state.target.lon) : null;
   drawTarget(r, C);
-  const name = target.label || (nearestStopName(target.lat, target.lon) ? `okolice: ${nearestStopName(target.lat, target.lon)}` : 'wskazane miejsce');
+  const name = state.target.label || (nearestStopName(state.target.lat, state.target.lon) ? `okolice: ${nearestStopName(state.target.lat, state.target.lon)}` : 'wskazane miejsce');
   renderTargetPop(r, C, name);
   if (!el) return;
   let body;
@@ -4488,26 +4492,26 @@ function renderTargetBox(saving = false) {
     if (!r.rides) extra.push('pieszo');
     body = `<div class="tb-time">${Math.max(1, Math.round(r.t))} min${extra.length ? ` <span>· ${extra.join(' · ')}</span>` : ''}</div>`
       + `<div class="sh-legs">${legsText(r.legs, C)}</div>`
-      + `<div class="muted" style="margin-top:4px">${C.mode === 'time' ? `Wyjazd ${fmt(C.csa.t0)}, prawdziwe odjazdy.` : `Typowy ${DAY_NAMES[isoDay]}, ze średnim czekaniem.`}</div>`;
+      + `<div class="muted" style="margin-top:4px">${C.mode === 'time' ? `Wyjazd ${fmt(C.csa.t0)}, prawdziwe odjazdy.` : `Typowy ${DAY_NAMES[state.isoDay]}, ze średnim czekaniem.`}</div>`;
   }
-  const saved = myPlaces.some(p => samePlace(p, target));
+  const saved = myPlaces.some(p => samePlace(p, state.target));
   const actions = saving
-    ? `<input id="place-name" type="text" maxlength="40" value="${esc(target.label || nearestStopName(target.lat, target.lon) || '')}" placeholder="Nazwa, np. Praca" aria-label="Nazwa miejsca">
+    ? `<input id="place-name" type="text" maxlength="40" value="${esc(state.target.label || nearestStopName(state.target.lat, state.target.lon) || '')}" placeholder="Nazwa, np. Praca" aria-label="Nazwa miejsca">
        <button type="button" class="chip on" data-target-save-ok="1">Zapisz</button><button type="button" class="link-btn" data-target-save-cancel="1">Anuluj</button>`
     : (saved ? '' : '<button type="button" class="link-btn" data-target-save="1">★ Zapisz jako moje miejsce</button>')
-      + (o ? `<button type="button" class="link-btn" data-target-origin="1">${target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce'}</button>` : '');
+      + (o ? `<button type="button" class="link-btn" data-target-origin="1">${state.target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce'}</button>` : '');
   el.innerHTML = `<div class="target-box">
     <div class="tb-top"><div class="tb-name">Cel: <b>${esc(name)}</b></div><button type="button" class="link-btn" data-target-clear="1" aria-label="Usuń cel">Usuń cel</button></div>
     ${body}<div class="tb-actions">${actions}</div></div>`;
   if (saving) { const inp = document.getElementById('place-name'); inp.focus(); inp.select(); }
 }
 function saveTargetAsPlace() {
-  if (!target) return;
+  if (!state.target) return;
   const inp = document.getElementById('place-name');
-  const name = (inp && inp.value.trim()) || nearestStopName(target.lat, target.lon) || 'Moje miejsce';
-  myPlaces.push({ name: name.slice(0, 40), lat: +target.lat.toFixed(5), lon: +target.lon.toFixed(5) });
+  const name = (inp && inp.value.trim()) || nearestStopName(state.target.lat, state.target.lon) || 'Moje miejsce';
+  myPlaces.push({ name: name.slice(0, 40), lat: +state.target.lat.toFixed(5), lon: +state.target.lon.toFixed(5) });
   saveMyPlaces();
-  target.label = name;
+  state.target.label = name;
   renderTargetBox(false);
   renderPlaceCard();
 }
@@ -4515,10 +4519,10 @@ function saveTargetAsPlace() {
 // Esc: kolejno anuluje wskazywanie celu, cel, linię, mapę zasięgu
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || (e.target.matches && e.target.matches('input[type=text], input[type=search], input[type=time], select, textarea'))) return;
-  if (pickingTarget) setPicking(false);
-  else if (target) clearTarget();
-  else if (selectedRouteKey) selectRoute(selectedRouteKey);
-  else if (iso) { clearIso(); renderIsoBox(); syncURL(true); }
+  if (state.pickingTarget) setPicking(false);
+  else if (state.target) clearTarget();
+  else if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
+  else if (state.iso) { clearIso(); renderIsoBox(); syncURL(true); }
   else return;
   e.preventDefault();
 });
@@ -4681,7 +4685,7 @@ function srChoose(it) {
   srClose();
   srInput.blur();
   const ll = L.latLng(it.lat, it.lon);
-  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
   selectPoint(ll, { label: it.name });
   setViewVisible(ll, it.zoom || 16);
 }
@@ -4740,10 +4744,10 @@ document.addEventListener('keydown', e => {
 });
 
 // telefon: uchwyt arkusza (stuknięcie) i przesunięcie palcem w górę / w dół
-document.getElementById('panel-toggle').addEventListener('click', () => setSheet(sheetState === 'full' ? 'peek' : 'full'));
+document.getElementById('panel-toggle').addEventListener('click', () => setSheet(state.sheetState === 'full' ? 'peek' : 'full'));
 document.getElementById('m-back').addEventListener('click', () => {
-  if (selectedRouteKey) selectRoute(selectedRouteKey);
-  else if (iso) { clearIso(); renderIsoBox(); syncURL(true); }
+  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
+  else if (state.iso) { clearIso(); renderIsoBox(); syncURL(true); }
   else closePlace();
 });
 let touchY0 = null;
@@ -4758,8 +4762,8 @@ panelEl.addEventListener('touchend', e => {
   const dy = e.changedTouches[0].clientY - touchY0;
   touchY0 = null;
   if (appEl.classList.contains('st-empty') || appEl.classList.contains('search-open') || panelEl.classList.contains('iso-open')) return;
-  if (dy < -40 && sheetState === 'peek') setSheet('full');
-  else if (dy > 50 && sheetState === 'full' && touchScroll0 <= 0 && panelEl.scrollTop <= 0) setSheet('peek');
+  if (dy < -40 && state.sheetState === 'peek') setSheet('full');
+  else if (dy > 50 && state.sheetState === 'full' && touchScroll0 <= 0 && panelEl.scrollTop <= 0) setSheet('peek');
 }, { passive: true });
 new ResizeObserver(setSheetVar).observe(panelEl);
 MQ_MOBILE.addEventListener('change', () => {
