@@ -304,3 +304,7 @@ async function renderLdTimetable(pane, route, key) {
     + early + table
     + (alts.size ? `<div class="muted tt-note">° kurs tylko do: ${[...alts].map(esc).join(', ')}</div>` : '');
 }
+// zamyka wybraną linię (jeśli jest)
+export function closeRoute() {
+  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
+}

@@ -206,3 +206,9 @@ async function fillNextDeparture(o) {
   el.innerHTML = `W ciągu ${state.iso.T} min nic stąd nie odjeżdża. <b>Najbliższy odjazd: ${esc(best.key.split('|')[0])} o ${fmt(best.m)}</b>`
     + ` (${zaMin(wait)}) z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-at="${Math.max(0, Math.round(best.m - best.tw - 2))}">Wyjdź o ${fmt(Math.max(0, Math.round(best.m - best.tw - 2)))}</button>`;
 }
+// wyłącza zasięg (✕ na chipie, „Wyłącz”, Esc, ← na telefonie)
+export function turnOffIso() {
+  clearIso();
+  renderIsoBox();
+  syncURL(true);
+}

@@ -141,3 +141,12 @@ export function repDate(day) {
   for (const w of want) { const d = days.find(x => new Date(x + 'T12:00').getDay() === w); if (d) return d; }
   return days[0];
 }
+// komórki deps/ ze słupkami `poles` (wczytywane raz, potem z pamięci)
+export function loadCellsFor(poles) {
+  return Promise.all([...new Set(poles.map(cellOf))].map(loadCell));
+}
+// każdy odjazd ze słupków `poles` w profilu `p`: cb(minuty, "ref|type", headsign, słupek)
+export function forEachDep(poles, cells, p, cb) {
+  poles.forEach(s => cells.forEach(cell => Object.entries(cell[s.id] || {}).forEach(([key, arr]) =>
+    arr.forEach(e => (e.t[e.p[p]] || []).forEach(m => cb(m, key, e.h, s))))));
+}
