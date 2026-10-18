@@ -1,10 +1,27 @@
-// prosty kopiec binarny [t, id]
-export function heapPush(h, x) { h.push(x); let i = h.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (h[p][0] <= h[i][0]) break; [h[p], h[i]] = [h[i], h[p]]; i = p; } }
+// prosty kopiec binarny na tablicy par [t, id] (zasięg bez walk.bin)
+export function heapPush(h, x) {
+  h.push(x);
+  let i = h.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (h[p][0] <= h[i][0]) break;
+    [h[p], h[i]] = [h[i], h[p]];
+    i = p;
+  }
+}
 export function heapPop(h) {
   const top = h[0], last = h.pop();
-  if (h.length) { h[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i;
-    if (l < h.length && h[l][0] < h[m][0]) m = l; if (r < h.length && h[r][0] < h[m][0]) m = r;
-    if (m === i) break; [h[m], h[i]] = [h[i], h[m]]; i = m; } }
+  if (!h.length) return top;
+  h[0] = last;
+  for (let i = 0; ;) {
+    const l = 2 * i + 1, r = l + 1;
+    let m = i;
+    if (l < h.length && h[l][0] < h[m][0]) m = l;
+    if (r < h.length && h[r][0] < h[m][0]) m = r;
+    if (m === i) break;
+    [h[m], h[i]] = [h[i], h[m]];
+    i = m;
+  }
   return top;
 }
 // Kolejka priorytetowa na tablicach typowanych (bez tworzenia obiektów w pętli)
