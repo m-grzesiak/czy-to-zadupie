@@ -6,10 +6,10 @@ import { ROUTES, lineStops, routeColor } from '../data.js';
 import { dropLayer, fitPad, map, viewBounds } from './view.js';
 import { HL_FILL, showStopHover, stopClicked, stopMouseOut } from './stops.js';
 
-const NEAR_ROUTE_M = 3000;   // widok trasy: tylko jej fragment w tej odległości od wybranego miejsca
-const ARROW_STEP_PX = 90;    // odstęp strzałek kierunku na ekranie
+const NEAR_ROUTE_M = 3000;   // route view: only the part of it within this distance from the selected place
+const ARROW_STEP_PX = 90;    // on-screen spacing of direction arrows
 
-let routeLayers = [];        // warianty wybranej linii (polilinie, indeks = state.selectedVariant)
+let routeLayers = [];        // variants of the selected line (polylines, index = state.selectedVariant)
 let routeLayerGroup = null;
 let routeStopsLayer = null;
 export let routeStopMarkers = [];
@@ -18,7 +18,7 @@ let previewLayer = null;
 let previewStopsLayer = null;
 let previewKey = null;
 
-// linia trasy na wspólnym płótnie, nie łapie kliknięć (inaczej zasłania przystanki)
+// route line on the shared canvas, does not catch clicks (otherwise it covers stops)
 export function routeLine(pts, style) {
   return L.polyline(pts, { lineJoin: 'round', interactive: false, ...style });
 }
@@ -32,8 +32,8 @@ export function clearRouteLayers() {
   routeLayers = [];
 }
 
-// Grubość trasy i kółek przystanków zależy od przybliżenia: przy oddaleniu gruba linia i duże kółka
-// zlewały pętle i zawracania w jedną plamę.
+// Route and stop circle thickness depends on zoom: when zoomed out, a thick line and large circles
+// merged loops and turnarounds into a single blob.
 function routeW() {
   const z = map ? map.getZoom() : 14;
   return z >= 16 ? { sel: 6, oth: 3, st: 4.5, term: 6, sw: 2.5 }
@@ -41,11 +41,11 @@ function routeW() {
        : z >= 14 ? { sel: 4, oth: 2, st: 3.2, term: 4.8, sw: 1.8 }
        :           { sel: 3, oth: 1.6, st: 2.4, term: 4, sw: 1.4 };
 }
-// promień i obwódka kółka przystanku linii (pętle większe)
+// radius and outline of a line stop circle (terminals larger)
 function stopCircleSize(term, W = routeW()) {
   return { radius: term ? W.term : W.st, weight: term ? W.sw + 0.6 : W.sw };
 }
-// pierwsze i ostatnie przystanki wariantów
+// first and last stops of the variants
 function terminalIds(route) {
   const ids = new Set();
   (route.trips || []).forEach(t => {
@@ -53,8 +53,8 @@ function terminalIds(route) {
   });
   return ids;
 }
-// Wszystkie słupki linii jako kółka w kolorze linii, nad trasą. Pętle (początek/koniec
-// wariantów) są większe i — dla wybranej linii — podpisane.
+// All poles of the line as circles in the line color, above the route. Terminals (start/end
+// of variants) are larger and — for the selected line — labeled.
 function buildRouteStops(route, key, interactive) {
   const color = routeColor(route);
   const hl = new Set(state.lastNearby.map(s => s.id));
@@ -82,7 +82,7 @@ function buildRouteStops(route, key, interactive) {
   return { layer: L.layerGroup(markers.map(x => x.m)), markers };
 }
 
-// Podgląd trasy po najechaniu na numer linii (bez przybliżania mapy)
+// Route preview when hovering a line number (without zooming the map)
 export function showPreview(key) {
   if (key === previewKey) return;
   clearPreview();
@@ -124,13 +124,13 @@ export function drawRoute(key) {
 
   fitRouteView();
 }
-// wybrane miejsce: przystanek albo środek okręgu
+// selected place: a stop or the circle center
 function placeCenter() {
   if (state.stopMode) return L.latLng(state.stopMode.lat, state.stopMode.lon);
   return state.radiusCircle ? state.radiusCircle.getLatLng() : null;
 }
-// Widok: fragment trasy w okolicy wybranego miejsca (do 3 km), a nie cała linia przez pół miasta.
-// Mapę tylko oddalamy/przesuwamy, nigdy nie przybliżamy. Na telefonie z marginesem na arkusz.
+// View: the part of the route around the selected place (up to 3 km), not the whole line across half the city.
+// The map is only zoomed out/panned, never zoomed in. On phones with padding for the sheet.
 export function fitRouteView() {
   const route = ROUTES[state.selectedRouteKey];
   if (!hasShapes(route)) return;
@@ -155,37 +155,37 @@ export function styleVariants() {
     m.setStyle({ weight });
   });
   drawRouteArrows();
-  // przystanki linii zawsze nad jej trasą (bringToFront wyżej przesuwa linię na wierzch)
+  // line stops always above its route (bringToFront above moves the line to the top)
   routeStopMarkers.forEach(({ m }) => m.bringToFront());
 }
 
-// trójkąt o środku c (piksele warstwy), skierowany wzdłuż wektora jednostkowego (ux, uy)
+// triangle centered at c (layer pixels), pointing along the unit vector (ux, uy)
 function arrowTriangle(c, ux, uy, size) {
   const tip = L.point(c.x + ux * size, c.y + uy * size);
   const l = L.point(c.x - ux * size * 0.6 - uy * size * 0.8, c.y - uy * size * 0.6 + ux * size * 0.8);
   const r = L.point(c.x - ux * size * 0.6 + uy * size * 0.8, c.y - uy * size * 0.6 - ux * size * 0.8);
   return [tip, l, r].map(p => map.layerPointToLatLng(p));
 }
-// Strzałki kierunku jazdy na wybranym wariancie (co ~90 px ekranu), żeby było widać, którędy
-// autobus objeżdża pętlę albo zawraca. Liczone w pikselach, więc przeliczane po każdym zoomie.
+// Direction arrows on the selected variant (every ~90 screen px), to show which way
+// the bus goes around a loop or turns back. Computed in pixels, so recomputed after every zoom.
 function drawRouteArrows() {
   arrowLayer = dropLayer(arrowLayer);
   const route = state.selectedRouteKey && ROUTES[state.selectedRouteKey];
   const shape = route && route.shapes && route.shapes[state.selectedVariant];
   if (!shape || shape.length < 2) return;
   const W = routeW(), color = routeColor(route);
-  const size = Math.max(6, W.sel * 1.6);   // wyraźnie szersze niż linia
+  const size = Math.max(6, W.sel * 1.6);   // clearly wider than the line
   const pts = shape.map(p => map.latLngToLayerPoint(p));
   const stopPx = routeStopMarkers.map(({ s }) => map.latLngToLayerPoint([s.lat, s.lon]));
   const arrows = [];
-  let next = ARROW_STEP_PX / 2;            // odległość (px) do następnej strzałki od początku odcinka
+  let next = ARROW_STEP_PX / 2;            // distance (px) to the next arrow from the start of the segment
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i], seg = a.distanceTo(b);
     if (!seg) continue;
     const ux = (b.x - a.x) / seg, uy = (b.y - a.y) / seg;
     for (; next <= seg; next += ARROW_STEP_PX) {
       const c = L.point(a.x + ux * next, a.y + uy * next);
-      if (stopPx.some(p => p.distanceTo(c) < size + 6)) continue;   // nie na kółku przystanku
+      if (stopPx.some(p => p.distanceTo(c) < size + 6)) continue;   // not on a stop circle
       arrows.push(L.polygon(arrowTriangle(c, ux, uy, size), {
         color: '#fff', weight: 1.5, fillColor: color, fillOpacity: 1, interactive: false,
       }));

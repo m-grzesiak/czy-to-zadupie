@@ -19,7 +19,7 @@
   </header>
   <div id="layout">
     <div id="map"></div>
-    <!-- telefon: przycisk w lewym górnym rogu mapy (× zamyka miejsce, „← Okolica” wraca z linii / zasięgu) -->
+    <!-- phone: button in the top-left corner of the map (× closes the place, „← Okolica” returns from a line / reach area) -->
     <div class="m-top">
     <button type="button" class="m-back" id="m-back" hidden></button>
     <button type="button" class="m-search" id="m-search" aria-label="Sprawdź inny adres" hidden><svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="4.8"/><path d="M10.6 10.6L14 14" stroke-linecap="round"/></svg></button>
@@ -27,7 +27,7 @@
     <div class="loading-pill" id="loading"><i></i><span>Wczytuję rozkład…</span></div>
     <div id="panel">
       <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false" aria-label="Rozwiń panel"></button>
-      <!-- wyszukiwarka adresów (Photon, komoot): wpisany adres = nowe miejsce do sprawdzenia -->
+      <!-- address search (Photon, komoot): an entered address = new place to check -->
       <div class="search" id="search">
         <div class="sr-box">
           <button type="button" class="sr-close" id="sr-close" aria-label="Zamknij wyszukiwanie"><svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>

@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { setup, open, settle, hoverLL, clickLL, tapLL, swipePanel, expectState, pagePoint } from './helpers.mjs';
 
-// Scenariusze z CLAUDE.md („Jak testować”). Każdy krok zapisuje stan strony (tekst panelu, adres, klasy,
-// karty na mapie, widok) i porównuje go ze wzorcem w golden/ — wzorce nagrywa `npm run golden`.
+// Scenarios from CLAUDE.md („Jak testować”). Each step records the page state (panel text, URL, classes,
+// map cards, view) and compares it with the golden in golden/ — goldens are recorded by `npm run golden`.
 
 const RYNEK = [50.06170, 19.93730];
 const RONDO_MOGILSKIE = 'stop_203_12519';
@@ -32,7 +32,7 @@ test.describe('komputer', () => {
     await expect(page.locator('#panel-sub')).toContainText(/\d+ linii nocnych/);
     await expect(page.locator('.dest', { hasText: 'Lotnisko' })).toContainText(/3\d min/);
     await expectState(page, 'd-rynek');
-    // hover na przystanek w liście pokazuje kartę na mapie
+    // hovering a stop in the list shows a card on the map
     await page.locator('.stop-item').first().hover();
     await settle(page);
     await expectState(page, 'd-rynek-hover-list');
@@ -110,7 +110,7 @@ test.describe('komputer', () => {
     await page.locator('[data-ld-before]').click({ timeout: 2000 }).catch(() => {});
     await settle(page);
     await expectState(page, 'd-line5-kurs');
-    // hover na numer innej linii = podgląd trasy, Esc zamyka linię
+    // hovering another line's number = route preview, Esc closes the line
     await page.locator('#lines-box .badge').nth(3).hover();
     await settle(page);
     await page.keyboard.press('Escape');

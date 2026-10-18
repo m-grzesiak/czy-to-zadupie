@@ -21,7 +21,7 @@ import { syncURL } from './url.js';
 import { setSheet, updateSheet } from './sheet.js';
 
 let clickMarker = null;
-// zamknięcie miejsca (× na telefonie): z powrotem sama mapa
+// closing the place (× on phones): back to just the map
 export function closePlace() {
   closeRoute();
   setPicking(false);
@@ -48,7 +48,7 @@ function clearPick() {
   if (state.radiusCircle) { map.removeLayer(state.radiusCircle); state.radiusCircle = null; }
   clearPoleLabels();
 }
-// Pinezka startu da się przeciągnąć: puszczenie = nowe miejsce (włączony zasięg się przelicza)
+// The origin pin can be dragged: dropping it = new place (an enabled reach area is recomputed)
 function addOriginMarker(latlng) {
   clickMarker = L.marker(latlng, { icon: clickIcon, draggable: true, keyboard: false, title: 'Przeciągnij, żeby zmienić miejsce', bubblingMouseEvents: false }).addTo(map);
   clickMarker.on('dragstart', () => { hideStopHover(); hidePointHover(); rememberPlace(); });
@@ -75,9 +75,9 @@ export function selectPoint(latlng, opts = {}) {
   renderBackPlace();
   updateSheet();
   syncURL(true);
-  if (keepIso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego miejsca
+  if (keepIso) computeIso();   // reach area mode stays on — recompute from the new place
 }
-// Klik w przystanek: bierzemy wszystkie słupki o tej nazwie w promieniu 400 m
+// Stop click: take all poles with this name within 400 m
 export function selectStop(s) {
   rememberPlace({ stopId: s.id, name: s.name });
   const poles = STOPS
@@ -98,16 +98,16 @@ export function selectStop(s) {
   state.lastNearby = poles;
   highlightStops(new Set(poles.map(x => x.id)));
   if (state.selectedRouteKey && !poles.some(x => servesLine(x, state.selectedRouteKey))) {
-    selectRoute(state.selectedRouteKey);   // ponowny wybór = odznaczenie linii, której tu nie ma
+    selectRoute(state.selectedRouteKey);   // selecting again = deselecting a line that is not here
   }
   renderStopPanel();
   panelEl.scrollTop = 0;
   renderBackPlace();
   updateSheet();
   syncURL(true);
-  if (state.iso) computeIso();   // tryb zasięgu zostaje włączony — przeliczamy od nowego przystanku
+  if (state.iso) computeIso();   // reach area mode stays on — recompute from the new stop
 }
-// stats (z lineStats): częstotliwość przy numerze linii; bez stats — same numery
+// stats (from lineStats): frequency next to the line number; without stats — just the numbers
 export function hwText(key, stats) {
   const st = stats && stats.per.get(key);
   if (!stats) return '';
@@ -116,7 +116,7 @@ export function hwText(key, stats) {
   const h = 840 / st.maxPole;
   return h <= 90 ? `co ${Math.max(1, Math.round(h))} min` : `${st.maxPole}× w 6–20`;
 }
-// pociągi: najpierw linie SKA, potem pociągi nazwane; dalej numery po kolei
+// trains: SKA lines first, then named trains; then numbers in order
 const ska = k => (k.endsWith('|train') && !/^SKA/.test(k) ? 1 : 0);
 const sortRef = (a, b) => (a.split('|')[1] !== b.split('|')[1] ? typeCmp(a.split('|')[1], b.split('|')[1])
   : ska(a) - ska(b) || a.localeCompare(b, 'pl', { numeric: true }));
@@ -147,16 +147,16 @@ export function badgesHtml(stops, reach = null, stats = null) {
     + (stats && day.length ? `<div class="muted hw-note">Przy numerze: średnio co ile minut odjeżdża ${dw}, w godz. 6–20.</div>` : '');
   return { html, count: day.length, night: night.length };
 }
-// wspólne części widoków: zakładka „Dojazdy” punktu i lista linii ze szczegółami wybranej
+// shared parts of the views: the point's „Dojazdy” tab and the line list with the selected line's details
 const PLACE_BOXES = '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>';
 const linesPane = b => `<div id="lines-box">${b.html}</div><div id="line-detail"></div>`;
-// treść panelu pod tytułem; `tabbed` = z zakładkami (na telefonie)
+// panel content below the title; `tabbed` = with tabs (on phones)
 function showResults(html, tabbed) {
   const results = document.getElementById('results');
   results.innerHTML = html;
   results.classList.toggle('tabbed', tabbed);
 }
-// Widok przystanku: najpierw odjazdy (po to się klika przystanek), potem linie i dojazdy do celów
+// Stop view: departures first (that is why one clicks a stop), then lines and travel to targets
 function renderStopPanel() {
   clearPreview();
   const { name, poles } = state.stopMode;
@@ -197,19 +197,19 @@ export function showEmpty() {
   renderBackPlace();
   announce();
 }
-// Chodzenie po ulicach od najbliższego węzła sieci pieszej, do `limit` minut
+// Walking along streets from the nearest walk network node, up to `limit` minutes
 function walkFromNode(nn, limit) {
   return walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], limit, { walkOnly: true });
 }
-// dojście (m) do przystanku z wyniku walkFromNode: null = nie da się dojść, undefined = przystanek poza siecią pieszą
+// walk (m) to a stop from the walkFromNode result: null = not reachable, undefined = stop outside the walk network
 function walkToStop(r, id) {
   const k = STOP_INDEX().get(id), sn = WALK.snapNode[k];
   if (sn < 0) return undefined;
   const t = r.time[sn];
   return isFinite(t) ? t * WALK_SPEED + WALK.snapLen[k] : null;
 }
-// Czy do przystanku w okręgu da się dojść pieszo z zaznaczonego punktu (po ulicach z walk.bin).
-// Limit: 2,5 × promień drogi — dalej to już "naokoło przez pół gminy", traktujemy jak brak dojścia.
+// Whether a stop inside the circle is reachable on foot from the marked point (along streets from walk.bin).
+// Limit: 2.5 × the radius of walking — beyond that it is "the long way round across half the municipality", treated as unreachable.
 function computePointReach(latlng, nearby) {
   if (!WALK) return null;
   const nn = nearestNode(latlng.lat, latlng.lng);
@@ -218,7 +218,7 @@ function computePointReach(latlng, nearby) {
   const out = new Map();
   nearby.forEach(st => {
     const w = walkToStop(r, st.id);
-    out.set(st.id, w === undefined ? st.dist * 1.3 : w);      // przystanek poza siecią: przybliżenie
+    out.set(st.id, w === undefined ? st.dist * 1.3 : w);      // stop outside the network: approximation
   });
   return out;
 }
@@ -231,7 +231,7 @@ function recompute(latlng) {
   state.lastNearby = nearby;
   state.pointReach = computePointReach(latlng, nearby);
   if (WALK === null && META && META.walk) {
-    // sieć piesza wczytuje się w tle; po wczytaniu przeliczamy ten sam punkt
+    // the walk network loads in the background; once loaded, recompute the same point
     loadWalk().then(() => { if (!state.stopMode && state.radiusCircle && state.radiusCircle.getLatLng().equals(latlng)) recompute(latlng); });
   }
   const unreach = new Set(state.pointReach ? nearby.filter(s => state.pointReach.get(s.id) === null).map(s => s.id) : []);
@@ -239,7 +239,7 @@ function recompute(latlng) {
 
   renderPanel(nearby);
 }
-// Zakładki panelu (widać je tylko na telefonie; na komputerze wszystkie części są pod sobą, w tej samej kolejności)
+// Panel tabs (shown only on phones; on desktop all parts are stacked, in the same order)
 const ptab = { point: 'dojazdy', stop: 'odjazdy' };
 function tabsHtml(kind, tabs) {
   if (!tabs.some(([id]) => id === ptab[kind])) ptab[kind] = tabs[0][0];
@@ -257,7 +257,7 @@ export function pickTab(id) {
     if (tabs && panelEl.scrollTop > tabs.offsetTop - 26) panelEl.scrollTop = tabs.offsetTop - 26;
   }
 }
-// Pusty okrąg — bez ślepego zaułka: najbliższe przystanki poza okręgiem + dojazdy do celów i tak działają
+// Empty circle — no dead end: nearest stops outside the circle + travel to targets still works
 function renderNoStopsPanel(title, sub) {
   const near = nearestOutside(state.radiusCircle.getLatLng());
   state.lastOutside = near;
@@ -276,8 +276,8 @@ function renderNoStopsPanel(title, sub) {
   showResults(html, false);
   renderIsoBox();
 }
-// Jedna pozycja na nazwę przystanku (ZTP ma osobny słupek na każdy kierunek/peron): {id, name, dist, count, walk}
-// walk: metry pieszo (id = słupek z najkrótszym dojściem), null = brak dojścia, undefined = nie policzone
+// One entry per stop name (ZTP has a separate pole for each direction/platform): {id, name, dist, count, walk}
+// walk: meters on foot (id = pole with the shortest walk), null = not reachable, undefined = not computed
 function stopGroups(nearby) {
   const byName = new Map();
   nearby.forEach(s => {
@@ -288,11 +288,11 @@ function stopGroups(nearby) {
       if (wm != null && (g.walk == null || wm < g.walk)) { g.walk = wm; g.id = s.id; }
     } else byName.set(s.name, { id: s.id, name: s.name, dist: s.dist, count: 1, walk: wm });
   });
-  // kolejność: najkrótsze dojście pieszo (jeśli znane), przystanki bez dojścia na końcu
+  // order: shortest walk (if known), unreachable stops last
   const sortKey = g => g.walk === null ? Infinity : g.walk != null ? g.walk : g.dist;
   return [...byName.values()].sort((a, b) => sortKey(a) - sortKey(b) || a.dist - b.dist);
 }
-// zakładka „Przystanki”: nazwa + dojście pieszo (kolumna); pod spodem odległość w linii prostej
+// „Przystanki” tab: name + walking distance (column); below it the straight-line distance
 function stopListHtml(groups) {
   const nUn = groups.filter(g => g.walk === null).length;
   let html = '<div class="group-label" style="margin-top:14px">Przystanki</div>';
@@ -308,7 +308,7 @@ function stopListHtml(groups) {
       + (meta ? `<div class="si-meta">${meta}</div>` : '') + '</div>';
   }).join('') + '</div>';
 }
-// Widok punktu: tytuł z liczbą linii, zakładki Dojazdy / Linie / Przystanki
+// Point view: title with the number of lines, tabs Dojazdy / Linie / Przystanki
 function renderPanel(nearby) {
   clearPreview();
   const title = document.getElementById('panel-title');
@@ -332,7 +332,7 @@ function renderPanel(nearby) {
   announce();
   refreshPlace();
 }
-// Najbliższe przystanki (po nazwie), gdy w okręgu nie ma żadnego: dojście po ulicach, jeśli jest sieć piesza
+// Nearest stops (by name) when there are none in the circle: walk along streets, if the walk network is there
 function nearestOutside(c) {
   const cand = STOPS.map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, dist: haversineMeters(c.lat, c.lng, s.lat, s.lon) }))
     .filter(s => s.dist <= 3000).sort((a, b) => a.dist - b.dist).slice(0, 60);
@@ -346,7 +346,7 @@ function nearestOutside(c) {
   });
   return [...byName.values()].sort((a, b) => a.key - b.key).slice(0, 3);
 }
-// przyciski promienia na telefonie (300 m / 500 m / 1 km / 2 km)
+// radius buttons on phones (300 m / 500 m / 1 km / 2 km)
 export function syncRseg() {
   document.querySelectorAll('.rseg [data-r]').forEach(b => {
     const on = +b.dataset.r === state.radiusMeters;
@@ -361,7 +361,7 @@ export function setRadius(m, fromSlider) {
   syncRseg();
   if (state.radiusCircle && !state.stopMode) {
     state.radiusCircle.setRadius(state.radiusMeters);
-    recompute(state.radiusCircle.getLatLng());   // promień zmienia tylko listę linii; zasięg i dojazdy się nie zmieniają
+    recompute(state.radiusCircle.getLatLng());   // the radius only changes the line list; the reach area and travel times stay the same
     syncURL(false);
   }
 }

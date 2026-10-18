@@ -10,12 +10,12 @@ import { isoCardLine } from '../iso.js';
 import { selectStop } from '../ui/panel.js';
 import { setTarget, targetClickMode } from '../ui/target.js';
 
-export const HL_FILL = '#f0b862';   // wypełnienie przystanku w okręgu (pomarańczowe)
-const SIBLING_M = 400;               // słupki o tej samej nazwie w tym promieniu = jeden przystanek
-const MAX_CHIPS = 16;                // tyle numerów linii w jednym rzędzie karty, reszta jako "+N"
+export const HL_FILL = '#f0b862';   // fill of a stop inside the circle (orange)
+const SIBLING_M = 400;               // poles with the same name within this radius = one stop
+const MAX_CHIPS = 16;                // this many line numbers in one card row, the rest as "+N"
 
-// Najechanie na przystanek w liście (czas przejazdu, lista przystanków) pokazuje go na mapie.
-// Jeśli jest poza widokiem, mapa lekko się przesuwa, a karta pojawia się po przesunięciu.
+// Hovering a stop in a list (travel time, stop list) shows it on the map.
+// If it is out of view, the map pans slightly and the card appears after the pan.
 let listHoverId = null;
 export function showListStop(id) {
   const st = STOP_BY_ID.get(id);
@@ -29,21 +29,21 @@ export function showListStop(id) {
 export function hideListStop() { listHoverId = null; hideStopHover(); }
 
 // ---------------------------------------------------------------------------
-// Kropki przystanków
+// Stop dots
 // ---------------------------------------------------------------------------
 function stopScale() { const z = map ? map.getZoom() : 14; return (z >= 16 ? 1.3 : z >= 14 ? 1 : z >= 12 ? 0.75 : 0.55) * (COARSE ? 1.25 : 1); }
 export function baseStopStyle(s) {
   const k = stopScale();
-  // przy zasięgu albo wybranej linii pozostałe przystanki schodzą na drugi plan (przystanki linii mają własne kółka)
+  // with a reach area or a selected line, other stops fade into the background (line stops have their own circles)
   if (state.iso || state.selectedRouteKey) return { radius: 2.6 * k, weight: 1, color: '#9d998d', fillColor: '#f4f2ec', fillOpacity: 0.8, opacity: 0.7, dashArray: null };
   const kind = s ? stopKind(s) : 'bus';
-  // stacja kolejowa trochę większa i z grubszą obwódką — widać ją między przystankami
+  // a train station is a bit larger with a thicker outline — it stands out among stops
   const train = kind === 'train';
   return { radius: (train ? 4.6 : 3.4) * k, weight: Math.max(1.3, (train ? 2.6 : 2) * k), color: STOP_COLOR[kind] || STOP_BUS,
            fillColor: '#ffffff', fillOpacity: 1, opacity: 0.95, dashArray: null };
 }
 export function restyleStops() { highlightStops(hlIds, hlUnreach); }
-// ids = słupki w zasięgu (pomarańczowe); unreach = w okręgu, ale bez dojścia pieszo (szare, przerywane)
+// ids = poles in range (orange); unreach = inside the circle but not reachable on foot (gray, dashed)
 let hlIds = new Set();
 let hlUnreach = new Set();
 export function highlightStops(ids, unreach = new Set()) {
@@ -60,12 +60,12 @@ export function highlightStops(ids, unreach = new Set()) {
 }
 
 // ---------------------------------------------------------------------------
-// Hover na przystanku: sprężysta kropka + pulsujący pierścień + karta z liniami.
-// Rysowane jako HTML w osobnej warstwie nad płótnem (canvas nie animuje CSS).
+// Stop hover: springy dot + pulsing ring + card with lines.
+// Drawn as HTML in a separate pane above the canvas (canvas does not animate CSS).
 // ---------------------------------------------------------------------------
 let hoverLayer = null;
 export let stopHoverOn = false;
-// Po kliknięciu przystanku jego karta nie wraca, dopóki kursor go nie opuści (panel pokazuje to samo).
+// After a stop is clicked its card does not return until the cursor leaves it (the panel shows the same).
 let hoverMute = null;
 export function stopMouseOut(s) {
   if (hoverMute === s.name) hoverMute = null;
@@ -77,24 +77,24 @@ export function stopClicked(s) {
   if (targetClickMode()) { setTarget(s.lat, s.lon, s.name, false, { pop: true, stopId: s.id }); return; }
   selectStop(s);
 }
-// pozostałe słupki tej nazwy w pobliżu (razem z `s` tworzą przystanek)
+// other poles with this name nearby (together with `s` they form the stop)
 function siblingPoles(s) {
   return STOPS.filter(x => x.name === s.name && x.id !== s.id && haversineMeters(s.lat, s.lon, x.lat, x.lon) <= SIBLING_M);
 }
-// linie wszystkich słupków bez powtórzeń, po rodzaju i numerze
+// lines of all poles without duplicates, by type and number
 function sortedLines(poles) {
   const lines = new Map();
   poles.forEach(x => x.lines.forEach(l => lines.set(`${l.ref}|${l.type}`, l)));
   return [...lines.values()].sort((a, b) =>
     (a.type !== b.type ? typeCmp(a.type, b.type) : a.ref.localeCompare(b.ref, 'pl', { numeric: true })));
 }
-// rząd numerów linii; przy dużych węzłach ucinany
+// row of line numbers; truncated at large hubs
 function chipRow(lines, cls) {
   if (!lines.length) return '';
   return '<div class="sh-chips">' + lines.slice(0, MAX_CHIPS).map(l => `<span class="${cls}">${esc(l.ref)}</span>`).join('')
     + (lines.length > MAX_CHIPS ? `<span class="more">+${lines.length - MAX_CHIPS}</span>` : '') + '</div>';
 }
-// pociągi, tramwaje i autobusy w osobnych rzędach + podsumowanie "2 kol. · 3 tram. · 5 aut."
+// trains, trams and buses in separate rows + summary "2 kol. · 3 tram. · 5 aut."
 function linesSummary(lines) {
   const train = lines.filter(l => l.type === 'train'), tram = lines.filter(l => l.type === 'tram');
   const bus = lines.filter(l => l.type !== 'tram' && l.type !== 'train');
@@ -132,8 +132,8 @@ export function hideStopHover() {
 }
 
 // ---------------------------------------------------------------------------
-// Numery słupków (01, 02…) z tablic ZTP przy wybranym przystanku — te same co na tablicy odjazdów.
-// Słupki tramwajowy i autobusowy o tym samym numerze to jedno miejsce, więc jedna etykieta.
+// Pole numbers (01, 02…) from ZTP boards at the selected stop — the same as on the departure board.
+// Tram and bus poles with the same number are one place, so one label.
 // ---------------------------------------------------------------------------
 let poleLayer = null;
 let poleEls = new Map();

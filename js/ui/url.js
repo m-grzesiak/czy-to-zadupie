@@ -11,8 +11,8 @@ import { selectPoint, selectStop, showEmpty, syncRseg } from './panel.js';
 import { renderTargetBox } from './target.js';
 
 // ---------------------------------------------------------------------------
-// Stan w adresie strony (#s=przystanek, #p=punkt&r=promień, l=linia, iso=minuty…):
-// link da się udostępnić, a "Wstecz" w przeglądarce wraca do poprzedniego widoku.
+// State in the page address (#s=stop, #p=point&r=radius, l=line, iso=minutes…):
+// the link can be shared, and the browser's "Back" returns to the previous view.
 // ---------------------------------------------------------------------------
 let syncTimer = 0;
 let syncPush = false;
@@ -30,10 +30,10 @@ function stateHash() {
   } else if (state.selectedRouteKey) p.set('l', state.selectedRouteKey);
   if (!state.iso && state.isoDay !== 'w' && (state.stopMode || state.radiusCircle)) p.set('dzien', state.isoDay);
   if (state.target) p.set('cel', `${state.target.lat.toFixed(5)},${state.target.lon.toFixed(5)}`);
-  const s = p.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/%7C/g, '|');   // czytelniejszy adres
+  const s = p.toString().replace(/%2C/g, ',').replace(/%3A/g, ':').replace(/%7C/g, '|');   // more readable address
   return s ? '#' + s : '';
 }
-// push = nowy wpis w historii (nowy widok), inaczej podmiana (zmiana parametru)
+// push = new history entry (new view), otherwise replace (parameter change)
 export function syncURL(push) {
   if (state.applyingState) return;
   syncPush = syncPush || push;
@@ -53,13 +53,13 @@ export async function applyState() {
     closeRoute();
     const day = DAY_NAMES[p.get('dzien')] ? p.get('dzien') : null;
     state.isoDay = day || 'w';
-    // cel przed miejscem startu, żeby od razu policzyć do niego trasę
+    // target before the origin place, so the route to it is computed right away
     const cel = (p.get('cel') || '').split(',').map(Number);
     if (cel.length === 2 && cel.every(Number.isFinite)) {
       if (!state.target || Math.abs(state.target.lat - cel[0]) > 1e-5 || Math.abs(state.target.lon - cel[1]) > 1e-5) state.target = { lat: cel[0], lon: cel[1], label: null };
     } else state.target = null;
-    state.targetPopOn = false;   // po „Wstecz” / z linku: cel bez dymka
-    // widok: miejsce ma być wyraźnie w środku mapy, nie przy krawędzi
+    state.targetPopOn = false;   // after „Wstecz” / from a link: target without a popup
+    // view: the place should be clearly in the middle of the map, not at the edge
     const reveal = ll => { if (!viewBounds(0.2).contains(ll)) setViewVisible(ll, Math.max(map.getZoom(), 15)); };
     const s = p.get('s') && STOP_BY_ID.get(p.get('s'));
     const pt = (p.get('p') || '').split(',').map(Number);

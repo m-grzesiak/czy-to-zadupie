@@ -12,9 +12,9 @@ import { syncURL } from './url.js';
 import { updateSheet } from './sheet.js';
 
 // ---------------------------------------------------------------------------
-// Chip zasięgu na mapie (prawy górny róg). Wyłączony: „◎ Zasięg 20 min” włącza zasięg.
-// Włączony: typ dnia / godzina, − 20 min +, ✕ (wyłącza, jak Esc). Widać go bez przewijania panelu,
-// więc zawsze wiadomo, że klik w mapę pokazuje czas dojazdu (dymek), a nie tylko wybiera miejsce.
+// Reach area chip on the map (top-right corner). Off: „◎ Zasięg 20 min” turns the reach area on.
+// On: day type / time, − 20 min +, ✕ (turns off, like Esc). Visible without scrolling the panel,
+// so it is always clear that a map click shows the travel time (popup), not just selects a place.
 // ---------------------------------------------------------------------------
 let isoChipEl = null;
 export const IsoChip = L.Control.extend({
@@ -50,7 +50,7 @@ export function renderIsoChip() {
     + `<button type="button" class="ic-x" data-chip="off" title="Wyłącz zasięg (Esc)" aria-label="Wyłącz zasięg">${CHIP_X}</button>`;
 }
 function onIsoChip(e) {
-  // chip przerysowuje się w trakcie kliknięcia; bez tego Leaflet nie widzi, że klik był w kontrolce, i ustawia cel
+  // the chip redraws during the click; without this Leaflet does not see the click was in the control and sets a target
   L.DomEvent.stopPropagation(e);
   const b = e.target.closest('[data-chip]');
   if (!b || b.disabled) return;
@@ -60,14 +60,14 @@ function onIsoChip(e) {
   else if (a === '-' || a === '+') applyIsoT((state.iso ? state.iso.T : state.isoT) + (a === '+' ? 5 : -5));
   else if (a === 'edit') document.getElementById('iso-box')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
-// wyłącza zasięg (✕ na chipie, „Wyłącz”, Esc, ← na telefonie)
+// turns off the reach area (✕ on the chip, „Wyłącz”, Esc, ← on phones)
 export function turnOffIso() {
   clearIso();
   renderIsoBox();
   syncURL(true);
 }
 
-// przystanki (po nazwie) osiągnięte w czasie T, bez samego przystanku startowego
+// stops (by name) reached within time T, excluding the origin stop itself
 function isoReached(o) {
   const bestByName = new Map();
   state.iso.labels.forEach((l, id) => {
@@ -78,26 +78,26 @@ function isoReached(o) {
   });
   return [...bestByName.values()].filter(x => !(state.iso.labels.get(x.id).origin && !o.point));
 }
-// czy w ogóle coś jedzie (inaczej "dojdziesz pieszo")
+// whether anything runs at all (otherwise "dojdziesz pieszo")
 function isoAnyRide(reached) {
   if (state.iso.mode === 'time') return state.iso.rides > 0;
   if (state.iso.walk) return reached.some(x => state.iso.res.kind[WALK.N + STOP_INDEX().get(x.id)] === 3);
   return reached.some(x => state.iso.labels.get(x.id).ti != null);
 }
-// najdalszy osiągnięty przystanek w linii prostej
+// farthest reached stop in a straight line
 function farthestText(o, reached) {
   if (!reached.length) return '—';
   const d = reached.reduce((a, x) => Math.max(a, haversineMeters(o.lat, o.lon, x.st.lat, x.st.lon)), 0);
   return (d / 1000).toLocaleString('pl', { maximumFractionDigits: 1 }) + ' km';
 }
-// przełącznik trybu (typowy dzień / wyjazd o godzinie)
+// mode switch (typical day / depart at time)
 function isoModeHtml(tm) {
   if (!timeModeAvailable() || !WALK) return '';
   return `<div class="seg" role="group" aria-label="Tryb">
       <button type="button" class="${tm ? '' : 'on'}" data-iso-mode="typical">Typowy dzień</button>
       <button type="button" class="${tm ? 'on' : ''}" data-iso-mode="time">Wyjazd o godzinie</button></div>`;
 }
-// parametry trybu: dzień i godzina wyjścia albo typ dnia
+// mode parameters: departure day and time, or day type
 function isoParamsHtml(tm) {
   if (!tm) {
     return '<div class="chips">' + Object.entries(DAY_NAMES).map(([k, v]) =>
@@ -114,7 +114,7 @@ function isoNote(tm) {
     ? `Prawdziwe odjazdy z rozkładu${state.iso.csa && state.iso.csa.approx ? ` (brak danych na ten dzień — rozkład z ${state.iso.csa.approx})` : ''}, ${TRANSFER_MIN} min zapasu na przesiadkę, dojście i przesiadki pieszo po ulicach z OpenStreetMap, 4,5 km/h. Bez korków i opóźnień.`
     : `Typowy dzień (${DAY_NAMES[state.isoDay]}), 6:00–20:00. Wliczam średnie czekanie na przystanku (połowa odstępu kursów)${WALK ? ', dojście i przesiadki pieszo po ulicach i ścieżkach z OpenStreetMap, 4,5 km/h' : ` i przesiadki pieszo do ${WALK_MAX} m, w przybliżeniu (linia prosta × 1,3)`}.`;
 }
-// legenda pasm: lista z liczbą przystanków (komputer) i pasek .iso-ramp (telefon, arkusz o stałej wysokości)
+// band legend: list with stop counts (desktop) and the .iso-ramp bar (phone, fixed-height sheet)
 function isoLegendHtml(reached) {
   const bands = state.iso.bands;
   const counts = bands.map(b => reached.filter(x => x.t >= b.lo && x.t < b.hi).length);
@@ -124,7 +124,7 @@ function isoLegendHtml(reached) {
     <div class="iso-ramp" aria-hidden="true"><div class="ir-bar">${bands.map(b => `<i style="background:${b.color}"></i>`).join('')}</div>
       <div class="ir-lab"><span>0</span>${bands.map((b, i) => `<span>${b.hi}${i === bands.length - 1 ? ' min' : ''}</span>`).join('')}</div></div>`;
 }
-// suwak czasu i pole godziny wyjścia
+// time slider and departure time field
 function bindIsoInputs() {
   const inp = document.getElementById('iso-t');
   let raf = 0;
@@ -134,7 +134,7 @@ function bindIsoInputs() {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => setIsoT(state.isoT));
   });
-  // po puszczeniu suwaka: przelicz od razu (bez czekania na klatkę) i odśwież statystyki
+  // after releasing the slider: recompute immediately (without waiting for a frame) and refresh the stats
   inp.addEventListener('change', () => {
     cancelAnimationFrame(raf);
     state.isoT = +inp.value;
@@ -169,7 +169,7 @@ export function renderIsoBox() {
   }
   const reached = isoReached(o);
   const tm = state.iso.mode === 'time';
-  const noRide = tm && state.iso.rides === 0;   // w limicie nic nie odjeżdża: pokaż najbliższy odjazd
+  const noRide = tm && state.iso.rides === 0;   // nothing departs within the limit: show the next departure
   box.innerHTML = `<div class="iso-card">
     <div class="iso-top"><h3>Zasięg ${o.point ? 'z zaznaczonego miejsca' : `z przystanku ${esc(o.name)}`}</h3><button type="button" class="link-btn" data-iso="off" title="Wyłącz zasięg (Esc)">Wyłącz</button></div>
     ${isoModeHtml(tm)}${isoParamsHtml(tm)}
@@ -184,7 +184,7 @@ export function renderIsoBox() {
   bindIsoInputs();
   if (noRide) fillNextDeparture(o);
 }
-// gdy w limicie czasu nic nie odjeżdża: najbliższy odjazd z przystanków startowych (z deps/)
+// when nothing departs within the time limit: the next departure from the origin stops (from deps/)
 async function fillNextDeparture(o) {
   const el0 = document.getElementById('iso-next');
   if (!el0 || !state.iso || !state.iso.csa) return;
@@ -194,7 +194,7 @@ async function fillNextDeparture(o) {
     : o.poles.map(p => ({ st: STOP_BY_ID.get(p.id), tw: 0 }));
   if (!starts.length || !prof) { el0.textContent = 'Z tego miejsca nie da się dojść pieszo do żadnego przystanku.'; return; }
   const cells = await loadCellsFor(starts.map(x => x.st));
-  // pierwszy odjazd w profilu `p`, na który zdążysz, wychodząc o `from` (dojście do przystanku `tw`)
+  // first departure in profile `p` you can catch leaving at `from` (walk to the stop `tw`)
   const firstDep = (p, from, date) => {
     let best = null;
     starts.forEach(({ st, tw }) => forEachDep([st], cells, p, (m, key, h) => {
@@ -211,14 +211,14 @@ async function fillNextDeparture(o) {
       + ` (${zaMin(best.m - state.isoTime)}) z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-at="${at}">Wyjdź o ${fmt(at)}</button>`;
     return;
   }
-  // kolejne dni (do tygodnia): pierwszy odjazd danego dnia
+  // following days (up to a week): first departure of the day
   const days = nextDays(8, state.isoDate).slice(1);
   for (const date of days) {
     const pr = profileFor(date);
     if (pr && (best = firstDep(pr.p, 0, date))) break;
   }
   if (!best) { el.innerHTML = '<b>Stąd w najbliższym tygodniu nic nie odjeżdża.</b>'; return; }
-  const i = days.indexOf(best.date) + 1;   // dni od wybranej daty
+  const i = days.indexOf(best.date) + 1;   // days from the selected date
   const dayLabel = i === 1 ? 'jutro' : dayChipLabel(best.date, i);
   const at = Math.max(0, Math.round(best.m - best.tw - 2));
   el.innerHTML = `<b>Tego dnia stąd już nic nie odjeżdża.</b> Najbliższy odjazd: ${dayLabel}, <b>${esc(best.key.split('|')[0])} o ${fmt(best.m)}</b>`

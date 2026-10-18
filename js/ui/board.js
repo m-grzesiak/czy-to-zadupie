@@ -2,11 +2,11 @@ import { state } from '../state.js';
 import { dmy, esc, fmt, inMin, nDeps, nowMinutes, todayISO } from '../util.js';
 import { META, forEachDep, loadCellsFor, profileFor } from '../data.js';
 
-const RARE = 8;            // tyle odjazdów dziennie lub mniej: wypisz je wszystkie nad tablicą
-const BOARD_SPAN = 180;    // tablica sięga 3 godziny do przodu
+const RARE = 8;            // this many departures per day or fewer: list them all above the board
+const BOARD_SPAN = 180;    // the board reaches 3 hours ahead
 const PL_TITLE = 'Numer przystanku z tablicy ZTP — taki sam jak etykieta przy przystanku na mapie';
 
-// wszystkie dzisiejsze odjazdy ze słupków (bez powtórek): [{m, key, h, c}]
+// all of today's departures from the poles (no duplicates): [{m, key, h, c}]
 function todayDeps(poles, cells, p) {
   const out = [], seen = new Set();
   forEachDep(poles, cells, p, (m, key, h, s) => {
@@ -15,7 +15,7 @@ function todayDeps(poles, cells, p) {
   });
   return out;
 }
-// rzadko obsługiwany przystanek: wypisz wszystkie dzisiejsze odjazdy (np. "w sobotę tylko 2")
+// rarely served stop: list all of today's departures (e.g. "w sobotę tylko 2")
 function rareHtml(allDay) {
   if (!allDay.length || allDay.length > RARE) return '';
   return `<div class="iso-next" style="margin-bottom:8px"><b>Dziś tylko ${nDeps(allDay.length)} stąd:</b> `

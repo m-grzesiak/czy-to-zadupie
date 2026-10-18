@@ -1,4 +1,4 @@
-// prosty kopiec binarny na tablicy par [t, id] (zasięg bez walk.bin)
+// simple binary heap over an array of [t, id] pairs (reach area without walk.bin)
 export function heapPush(h, x) {
   h.push(x);
   let i = h.length - 1;
@@ -24,7 +24,7 @@ export function heapPop(h) {
   }
   return top;
 }
-// Kolejka priorytetowa na tablicach typowanych (bez tworzenia obiektów w pętli)
+// Priority queue on typed arrays (no object allocation in the loop)
 export class TypedHeap {
   constructor(cap = 4096) { this.k = new Float64Array(cap); this.v = new Int32Array(cap); this.n = 0; }
   push(key, val) {
@@ -37,7 +37,7 @@ export class TypedHeap {
     while (i > 0) { const p = (i - 1) >> 1; if (K[p] <= key) break; K[i] = K[p]; V[i] = V[p]; i = p; }
     K[i] = key; V[i] = val;
   }
-  pop() {   // zwraca wartość; klucz w this.top
+  pop() {   // returns the value; key in this.top
     const K = this.k, V = this.v, val = V[0];
     this.top = K[0];
     const n = --this.n;

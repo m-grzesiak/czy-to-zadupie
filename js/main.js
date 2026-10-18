@@ -4,8 +4,8 @@ import { applyMaxBounds, initMap, locateCtl, map, zoomCtl } from './map/view.js'
 import { renderDataInfo, showEmpty } from './ui/panel.js';
 import { applyState } from './ui/url.js';
 import { setSheetVar, updateSheet } from './ui/sheet.js';
-// Pozostałe moduły: część z nich przy wczytaniu podpina nasłuchy (history, search, events),
-// a lista ustala kolejność ich wykonania.
+// Remaining modules: some attach listeners on load (history, search, events),
+// and this list fixes their execution order.
 import './state.js';
 import './util.js';
 import './config.js';
@@ -28,9 +28,9 @@ import './ui/history.js';
 import './ui/search.js';
 import './ui/events.js';
 
-// przejście telefon ↔ komputer (szerokość 760 px): kontrolki mapy, granice i arkusz
+// phone ↔ desktop switch (760 px width): map controls, bounds and sheet
 function onLayoutChange() {
-  if (zoomCtl && locateCtl) {   // kolejność jak przy starcie: na komputerze + − nad lokalizacją
+  if (zoomCtl && locateCtl) {   // same order as at startup: on desktop + − above the locate button
     locateCtl.remove();
     zoomCtl.setPosition(isMobile() ? 'bottomright' : 'topleft');
     locateCtl.setPosition(isMobile() ? 'topright' : 'topleft').addTo(map);
@@ -40,13 +40,13 @@ function onLayoutChange() {
   if (map) map.invalidateSize();
 }
 
-// start: dane przystanków → mapa → widok z adresu strony (albo pusty panel)
+// startup: stop data → map → view from the page URL (or empty panel)
 async function init() {
   MQ_MOBILE.addEventListener('change', onLayoutChange);
   await loadStops();
   indexStops();
   initMap();
-  window.__mapa = { map };   // dostęp z konsoli i z testów (tests/helpers.mjs)
+  window.__mapa = { map };   // access from the console and tests (tests/helpers.mjs)
   updateSheet();
   setSheetVar();
   setLoading('data', null);

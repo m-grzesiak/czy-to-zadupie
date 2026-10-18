@@ -1,4 +1,4 @@
-// Stałe elementy strony i drobne pomocnicze funkcje interfejsu (komunikat, ogłoszenia, pigułka wczytywania).
+// Fixed page elements and small UI helpers (notice, announcements, loading pill).
 const byId = id => document.getElementById(id);
 
 export const radiusInput = byId('radius');
@@ -8,30 +8,30 @@ export const routeStatus = byId('route-status');
 export const panelEl = byId('panel');
 export const layoutEl = byId('layout');
 export const appEl = byId('app');
-// pusty panel (karta startowa) z HTML — przywracany przez showEmpty
+// empty panel (start card) from the HTML, restored by showEmpty
 export const EMPTY_HTML = byId('results').innerHTML;
 
 // ---------------------------------------------------------------------------
-// Telefon (do 760 px): mapa na cały ekran, panel jako arkusz wysuwany od dołu.
-// Stany: karta startowa (bez miejsca, #app.st-empty), niski arkusz „peek” i rozwinięty „full”
-// (#layout.sheet-peek / .sheet-full), wybrana linia (#panel.line-open) i zasięg (#panel.iso-open,
-// niski arkusz z samymi ustawieniami). Na komputerze klasy nic nie zmieniają.
+// Phone (up to 760 px): full-screen map, panel as a bottom sheet.
+// States: start card (no place, #app.st-empty), low „peek” sheet and expanded „full”
+// (#layout.sheet-peek / .sheet-full), selected line (#panel.line-open) and reach area (#panel.iso-open,
+// low sheet with settings only). On desktop the classes change nothing.
 // ---------------------------------------------------------------------------
 export const MQ_MOBILE = window.matchMedia('(max-width: 760px)');
 export const isMobile = () => MQ_MOBILE.matches;
-// ekran dotykowy: większe kropki przystanków i większa tolerancja trafienia palcem
+// touch screen: bigger stop dots and more tolerance for finger taps
 export const COARSE = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
-// komunikat nad wynikami (np. błąd lokalizacji); pusty tekst chowa
+// notice above the results (e.g. location error); empty text hides it
 const noticeEl = byId('notice');
 export function showNotice(text) { noticeEl.hidden = !text; noticeEl.textContent = text || ''; }
-// czytniki ekranu: ogłoś nowy tytuł panelu
+// screen readers: announce the new panel title
 const srStatus = byId('sr-status');
 export function announce() {
   const t = byId('panel-title').textContent, s = byId('panel-sub').textContent;
   srStatus.textContent = s ? `${t}. ${s}` : t;
 }
-// pigułka "Wczytuję…" nad mapą; kilka wczytań naraz = jedna pigułka
+// "Wczytuję…" pill over the map; several loads at once = one pill
 const loadingEl = byId('loading');
 const loadingJobs = new Map();
 export function setLoading(job, text) {

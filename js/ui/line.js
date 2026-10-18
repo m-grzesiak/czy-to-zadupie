@@ -30,13 +30,13 @@ export function selectRoute(key) {
   state.ldKurs = null; state.ldBefore = false; state.ldEarly = false;
   state.sheetState = 'peek';
   panelEl.scrollTop = 0;
-  if (!wasSel) restyleStops();   // pozostałe przystanki przygaszone od razu, nie dopiero po zoomie
+  if (!wasSel) restyleStops();   // other stops faded immediately, not only after a zoom
   drawRoute(key);
   updateBadgeSelection();
   renderLineDetail();
   syncURL(true);
 }
-// zamyka wybraną linię (jeśli jest)
+// closes the selected line (if any)
 export function closeRoute() {
   if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
 }
@@ -45,14 +45,14 @@ export function updateBadgeSelection() {
     el.classList.toggle('selected', el.dataset.key === state.selectedRouteKey);
   });
 }
-// najbliższy (po nazwie) przystanek w promieniu, który obsługuje linię — wszystkie jego słupki
+// nearest (by name) stop within the radius that serves the line — all its poles
 function nearestPoles(key) {
   const serving = state.lastNearby.filter(s => servesLine(s, key));
   if (!serving.length) return null;
   const name = serving[0].name;
   return { name, dist: serving[0].dist, poles: serving.filter(s => s.name === name) };
 }
-// pozycja przystanku o tej nazwie w wariancie: indeks (-1 = brak) i względna (0..1, Infinity = brak)
+// position of the stop with this name in the variant: index (-1 = none) and relative (0..1, Infinity = none)
 const stopPos = (t, name) => t.s.findIndex(([id]) => STOP_BY_ID.get(id)?.name === name);
 function relPos(t, name) {
   const pos = stopPos(t, name);
@@ -62,7 +62,7 @@ function defaultVariant(key) {
   const route = ROUTES[key];
   const np = nearestPoles(key);
   if (!route || !route.trips || !np) return 0;
-  // wolimy wariant, w którym pobliski przystanek jest wcześnie (czyli jedziemy "stąd")
+  // prefer the variant in which the nearby stop comes early (i.e. we ride "from here")
   let best = 0, bestPos = Infinity;
   route.trips.forEach((t, i) => {
     if (!t) return;
@@ -73,10 +73,10 @@ function defaultVariant(key) {
 }
 export let detailToken = 0;
 let ttToken = 0;
-// stan widoku linii: zakładka, wybrany kurs (minuty od północy, do godzin na trasie),
-// rozwinięte wcześniejsze przystanki i wcześniejsze godziny rozkładu
+// line view state: tab, selected trip (minutes after midnight, for times along the route),
+// expanded earlier stops and earlier timetable hours
 const ldCache = new Map();
-// odjazdy linii z przystanku (wszystkie jego słupki) w danym dniu, pogrupowane po kierunku z rozkładu (headsign)
+// line departures from the stop (all its poles) on a given day, grouped by timetable direction (headsign)
 async function lineDepsFor(np, key, day) {
   const ck = `${key}|${np.poles.map(p => p.id).join(',')}|${day}`;
   if (ldCache.has(ck)) return ldCache.get(ck);
@@ -84,7 +84,7 @@ async function lineDepsFor(np, key, day) {
   const prof = profileFor(day);
   let res = null;
   if (prof) {
-    // tylko wpisy tej linii; kierunki w kolejności z danych (także bez kursów tego dnia — odrzucane na końcu)
+    // only entries of this line; directions in data order (also those with no trips that day — dropped at the end)
     const byH = new Map();
     np.poles.forEach(s => cells.forEach(cell => (cell[s.id]?.[key] || []).forEach(e => {
       if (!byH.has(e.h)) byH.set(e.h, new Set());
@@ -96,8 +96,8 @@ async function lineDepsFor(np, key, day) {
   ldCache.set(ck, res);
   return res;
 }
-// Kierunek (headsign wariantu) dla odjazdów z danym headsignem. Kursy skrócone (np. „Łagiewniki”)
-// trafiają do kierunku, w którym taki przystanek jest dalej na trasie.
+// Direction (variant headsign) for departures with a given headsign. Short-turn trips (e.g. „Łagiewniki”)
+// go to the direction in which that stop is further along the route.
 function depDir(route, h, hereName) {
   const trips = (route.trips || []).filter(Boolean);
   if (trips.some(t => t.h === h)) return h;
@@ -109,7 +109,7 @@ function depDir(route, h, hereName) {
   }
   return null;
 }
-// odjazdy w wybranym kierunku: [{m, h}] po kolei
+// departures in the selected direction: [{m, h}] in order
 function dirDeps(route, byH, dir, hereName) {
   const out = [];
   let mapped = false;
@@ -118,11 +118,11 @@ function dirDeps(route, byH, dir, hereName) {
     if (d) mapped = true;
     if (d === dir) mins.forEach(m => out.push({ m, h }));
   });
-  if (!mapped) byH.forEach((mins, h) => mins.forEach(m => out.push({ m, h })));   // nie da się przypisać: wszystkie
+  if (!mapped) byH.forEach((mins, h) => mins.forEach(m => out.push({ m, h })));   // cannot be assigned: all of them
   return out.sort((a, b) => a.m - b.m);
 }
 const selectedTrip = route => (route.trips || [])[state.selectedVariant];
-// kierunek = wariant z tym headsignem, w którym wybrany przystanek jest najwcześniej (jedziemy „stąd”)
+// direction = variant with this headsign in which the selected stop comes earliest (we ride „from here”)
 export function pickDir(h) {
   const route = ROUTES[state.selectedRouteKey];
   if (!route) return;
@@ -148,7 +148,7 @@ export function setLdTab(tab) {
   });
   renderLdPane(detailToken);
 }
-// nagłówek: numer, rodzaj (+ przewoźnik, częstotliwość), nazwa trasy, ✕
+// header: number, type (+ operator, frequency), route name, ✕
 function ldHeadHtml(route, key) {
   const kind = TYPE_NAME[route.type] || 'Autobus';
   const hw = isNight(key) ? 'linia nocna' : hwText(key, state.placeStats);
@@ -157,7 +157,7 @@ function ldHeadHtml(route, key) {
     <div class="ld-name">${esc(route.name || kind)}</div></div>
     <button type="button" class="ld-close" data-line-close="1" aria-label="Zamknij linię ${esc(route.ref)}" title="Zamknij linię (Esc)">✕</button></div>`;
 }
-// przełącznik kierunku, a w jednym kierunku kilka wariantów: przyciski „skąd → dokąd”
+// direction switch, and with several variants in one direction: „from → to” buttons
 function ldDirHtml(trips, t) {
   const dirs = [];
   trips.forEach(x => { if (x && !dirs.includes(x.h)) dirs.push(x.h); });
@@ -166,7 +166,7 @@ function ldDirHtml(trips, t) {
     html += '<div class="dseg" role="group" aria-label="Kierunek">' + dirs.map(h =>
       `<button type="button" data-dir="${esc(h)}" class="${h === t.h ? 'on' : ''}" aria-pressed="${h === t.h}" title="Kierunek ${esc(h)}">→ ${esc(h)}</button>`).join('') + '</div>';
   }
-  // ten sam kierunek w kilku wariantach (np. kursy z zajezdni): cały odcinek „skąd → dokąd”
+  // the same direction in several variants (e.g. trips from the depot): the whole „from → to” segment
   const same = trips.map((x, i) => [x, i]).filter(([x]) => x && x.h === t.h);
   if (same.length > 1) {
     html += '<div class="chips ld-vars">' + same.map(([x, i]) =>
@@ -174,7 +174,7 @@ function ldDirHtml(trips, t) {
   } else if (dirs.length < 2) html += `<div class="ld-from">Kierunek <b>→ ${esc(t.h)}</b></div>`;
   return html;
 }
-// skąd odjazdy (z odległością jak na liście przystanków: pieszo po ulicach, jeśli policzona) + miejsce na kafelki
+// where departures are from (with distance as in the stop list: walking along streets, if computed) + room for tiles
 function ldFromHtml(np) {
   const walkM = state.pointReach ? Math.min(...np.poles.map(p => state.pointReach.get(p.id) ?? Infinity)) : Infinity;
   const distTxt = isFinite(walkM) ? `${Math.round(walkM / 10) * 10} m pieszo` : `${Math.round(np.dist)} m`;
@@ -183,8 +183,8 @@ function ldFromHtml(np) {
 }
 const ldTabBtn = (id, label) =>
   `<button type="button" role="tab" data-ldtab="${id}" class="${state.ldTab === id ? 'on' : ''}" aria-selected="${state.ldTab === id}">${label}</button>`;
-// Szczegóły linii: nagłówek, kierunek, najbliższe odjazdy (kafelki = wybór kursu),
-// zakładki „Trasa i czasy” (przystanki z czasem i godziną dla wybranego kursu) i „Rozkład” (dni + tabela)
+// Line details: header, direction, next departures (tiles = trip choice),
+// tabs „Trasa i czasy” (stops with time and clock time for the selected trip) and „Rozkład” (days + table)
 export function renderLineDetail() {
   const el = document.getElementById('line-detail');
   updateSheet();
@@ -206,7 +206,7 @@ export function renderLineDetail() {
   renderLdPane(token);
   if (hasDeps && np) renderLdNext(token);
 }
-// najbliższe odjazdy w wybranym kierunku (dziś); kafelek = kurs, dla którego liczą się godziny na trasie
+// next departures in the selected direction (today); tile = the trip the times along the route are computed for
 async function renderLdNext(token) {
   const key = state.selectedRouteKey, route = ROUTES[key], np = nearestPoles(key);
   if (!route || !np) return;
@@ -223,7 +223,7 @@ async function renderLdNext(token) {
     : !next.length ? `<div class="muted">${deps.length ? 'Dziś już nic stąd nie odjeżdża w tym kierunku.' : 'Dziś ta linia nie odjeżdża stąd w tym kierunku.'}</div>`
     : next.map(x => `<button type="button" class="ld-nt${x.m === state.ldKurs ? ' on' : ''}" data-kurs="${x.m}" aria-pressed="${x.m === state.ldKurs}" title="Godziny na trasie dla kursu o ${fmt(x.m)}">`
       + `<b>${fmt(x.m)}</b><small>${zaMin(x.m - nowMin)}</small>${t && x.h !== t.h ? `<em>→ ${esc(x.h)}</em>` : ''}</button>`).join('');
-  if (state.ldTab === 'trasa') renderLdPane(token);   // godziny przyjazdu zależą od wybranego kursu
+  if (state.ldTab === 'trasa') renderLdPane(token);   // arrival times depend on the selected trip
 }
 export function renderLdPane(token) {
   const pane = document.getElementById('ld-pane');
@@ -244,7 +244,7 @@ export function renderLdPane(token) {
       + (kurs != null ? `, na miejscu ok. <b>${fmt(kurs + total - base)}</b>` : '')
       + (here > 0 ? ` <span class="muted">(cała trasa ${total} min)</span>` : '') + '</div>';
   }
-  // dwa słupki tej samej nazwy pod rząd (np. pętla): jeden wiersz — zostaje późniejszy albo "tu"
+  // two poles with the same name in a row (e.g. a loop): one row — the later one stays, or "tu"
   const nm = j => STOP_BY_ID.get(t.s[j][0])?.name || t.s[j][0];
   const rows = [];
   t.s.forEach(([id, off], i) => {
@@ -270,7 +270,7 @@ export function renderLdPane(token) {
   html += `<div class="muted" style="margin-top:6px">Czasy z rozkładu dla kursu około południa; w szczycie mogą być dłuższe.${kurs != null ? ' Godziny przyjazdu są przybliżone.' : ''}</div>`;
   pane.innerHTML = html;
 }
-// dziś: godziny przed bieżącą (co najmniej dwie) zwinięte w przycisk „Wcześniej: …”
+// today: hours before the current one (at least two) collapsed into a „Wcześniej: …” button
 function foldEarly(entries, nowMin) {
   const curH = Math.floor(nowMin / 60);
   const past = entries.filter(([hh]) => hh < curH);
@@ -282,7 +282,7 @@ function foldEarly(entries, nowMin) {
     early: `<button type="button" class="ld-more" data-ld-early="1"><span aria-hidden="true">↑</span> Wcześniej: ${hm(past[0][1][0].m)}–${hm(lastPast[lastPast.length - 1].m)} (${nDeps(n)})</button>`,
   };
 }
-// tabela godzina → minuty; kursy w innym kierunku niż wybrany (skrócone) z „°”, zebrane w `alts`
+// table hour → minutes; trips in a direction other than the selected one (short-turn) marked „°”, collected in `alts`
 function ttTableHtml(entries, t, isToday, nowMin, nextM, alts) {
   return '<table class="tt">' + entries.map(([hh, xs]) =>
     `<tr><td class="h">${hh % 24}</td><td class="m">` + xs.map(x => {
@@ -292,7 +292,7 @@ function ttTableHtml(entries, t, isToday, nowMin, nextM, alts) {
       return `<span class="${cls}"${alt ? ` title="→ ${esc(x.h)}"` : ''}>${String(x.m % 60).padStart(2, '0')}${alt ? '°' : ''}</span>`;
     }).join(' ') + '</td></tr>').join('') + '</table>';
 }
-// zakładka „Rozkład”: dzień + tabela godzin w wybranym kierunku; dziś wcześniejsze godziny zwinięte
+// „Rozkład” tab: day + table of hours in the selected direction; today the earlier hours are collapsed
 async function renderLdTimetable(pane, route, key) {
   const np = nearestPoles(key);
   if (!META || !META.calendar) { pane.innerHTML = `<div class="muted">${NO_DATA}</div>`; return; }

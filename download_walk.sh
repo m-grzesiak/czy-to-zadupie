@@ -1,7 +1,7 @@
 #!/bin/bash
-# Pobiera sieć pieszą OSM dla mapy zasięgu w 12 kawałkach (mniejsze zapytania = serwer nie odrzuca).
-# Użycie: bash download_walk.sh     -> pliki walk_osm/*.json + archiwum walk_osm.tar.xz (commitowane, z niego korzysta CI)
-# Odświeżenie: rm -rf walk_osm && bash download_walk.sh  (pobrane kawałki są pomijane)
+# Downloads the OSM pedestrian network for the reach map in 12 chunks (smaller queries = the server doesn't reject them).
+# Usage: bash download_walk.sh     -> files walk_osm/*.json + archive walk_osm.tar.xz (committed, used by CI)
+# Refresh: rm -rf walk_osm && bash download_walk.sh  (already downloaded chunks are skipped)
 set -u
 cd "$(dirname "$0")"
 mkdir -p walk_osm
@@ -32,6 +32,6 @@ for i in 0 1 2; do
   done
 done
 echo "Gotowe: $(du -sh walk_osm | cut -f1) w walk_osm/"
-# COPYFILE_DISABLE i --no-xattrs: tar z macOS inaczej dokłada pliki ._* z atrybutami
+# COPYFILE_DISABLE and --no-xattrs: otherwise macOS tar adds ._* files with attributes
 COPYFILE_DISABLE=1 tar --no-xattrs -cJf walk_osm.tar.xz walk_osm
 echo "Spakowano do walk_osm.tar.xz ($(du -h walk_osm.tar.xz | cut -f1)) — zacommituj je, żeby CI użyło nowej sieci"

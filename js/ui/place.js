@@ -11,13 +11,13 @@ import { badgesHtml } from './panel.js';
 import { renderTargetBox } from './target.js';
 import { syncURL } from './url.js';
 
-// typ dnia w zdaniu: „Czas dojazdu w sobotę…”
+// day type in a sentence: „Czas dojazdu w sobotę…”
 const DAY_WORD = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' };
 export const dayWord = () => DAY_WORD[state.isoDay];
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const walkMinutes = m => Math.max(1, Math.round(m / WALK_SPEED));
 
-// Typ dnia (roboczy / sobota / niedziela) — wspólny dla częstotliwości, dojazdów do celów i zasięgu "typowy dzień"
+// Day type (weekday / Saturday / Sunday) — shared by frequency, travel to targets and the "typical day" reach area
 export function setDayType(d) {
   if (!DAY_NAMES[d] || d === state.isoDay) return;
   state.isoDay = d;
@@ -36,26 +36,26 @@ export function removeMyPlace(i) {
 export const samePlace = (a, b) => a && b && Math.abs(a.lat - b.lat) < 2e-5 && Math.abs(a.lon - b.lon) < 2e-5;
 let placeToken = 0;
 function reachFor(o) { return { o, ...typicalRun(o), walk: true, mode: 'typical', day: state.isoDay }; }
-// przystanki z dojściem pieszo z zaznaczonego punktu (bez policzonego dojścia: wszystkie)
+// stops reachable on foot from the marked point (without a computed walk: all of them)
 const walkable = stops => stops.filter(s => !state.pointReach || state.pointReach.get(s.id) !== null);
-// przystanki, z których liczymy częstotliwość: wybrany przystanek albo przystanki w okręgu z dojściem pieszo
+// stops used for frequency: the selected stop or stops inside the circle reachable on foot
 function placePoles() {
   return state.stopMode ? state.stopMode.poles : walkable(state.lastNearby);
 }
-// Statystyki odjazdów z przystanków (deps/) dla reprezentatywnego dnia danego typu
+// Departure stats from the stops (deps/) for a representative day of the given type
 const statsDone = new Map();
 const statsPending = new Map();
 const statsKey = poles => state.isoDay + ':' + poles.map(p => p.id).sort().join(',');
 export function placeStatsFor(stops) {
   return statsDone.get(statsKey(state.stopMode ? stops : walkable(stops))) || null;
 }
-// per: "ref|type" → {maxPole: kursy 6–20 na najczęściej obsługiwanym słupku, all: wszystkie kursy};
-// first / last: pierwszy i ostatni kurs dzienny, perHour: kursy na godzinę w jedną stronę
+// per: "ref|type" → {maxPole: trips 6–20 on the most served pole, all: all trips};
+// first / last: first and last daytime trip, perHour: trips per hour in one direction
 function computeStats(poles, cells, p) {
   const per = new Map();
   let first = Infinity, last = -Infinity, lastKey = null;
   poles.forEach(s => {
-    // linie słupka w kolejności z danych, także bez kursów tego dnia (kolejność rozstrzyga remisy „najczęstszej linii”)
+    // pole lines in data order, also those with no trips that day (order breaks ties for the „most frequent line”)
     const day = new Map();
     cells.forEach(cell => Object.keys(cell[s.id] || {}).forEach(k => {
       if (!per.has(k)) per.set(k, { maxPole: 0, all: 0 });
@@ -66,10 +66,10 @@ function computeStats(poles, cells, p) {
       if (m >= 360 && m < 1200) day.set(k, day.get(k) + 1);
       if (!isNight(k)) { if (m < first) first = m; if (m > last) { last = m; lastKey = k; } }
     });
-    // odstęp liczymy z przystanku (słupka), na którym linia jeździ najczęściej — to jeden kierunek
+    // the headway is taken from the stop (pole) where the line runs most often — that is one direction
     day.forEach((n, k) => { const cur = per.get(k); cur.maxPole = Math.max(cur.maxPole, n); });
   });
-  // kursy na godzinę w jedną stronę, suma linii dziennych (ta sama linia na kilku przystankach liczy się raz)
+  // trips per hour in one direction, sum of daytime lines (the same line at several stops counts once)
   let perHour = 0;
   per.forEach((v, k) => { if (!isNight(k)) perHour += v.maxPole / 14; });
   return { per, perHour, first, last, lastKey };
@@ -109,7 +109,7 @@ export function refreshPlace() {
   (async () => {
     const stP = needStats ? lineStats(poles) : null;
     if (WALK === null) await loadWalk();
-    else await new Promise(r => setTimeout(r, 0));   // najpierw pinezka i panel na ekranie, potem liczenie (~40 ms)
+    else await new Promise(r => setTimeout(r, 0));   // pin and panel on screen first, then the computation (~40 ms)
     if (token !== placeToken) return;
     if (WALK && !state.reach) state.reach = reachFor(o);
     if (stP) state.placeStats = await stP;
@@ -119,13 +119,13 @@ export function refreshPlace() {
     renderTargetBox();
   })();
 }
-// ile linii nocnych jeździ z przystanków miejsca (tych, do których da się dojść)
+// how many night lines run from the place's stops (those reachable on foot)
 function nightCount() {
   const ks = new Set();
   placePoles().forEach(s => s.lines.forEach(l => { const k = `${l.ref}|${l.type}`; if (isNight(k)) ks.add(k); }));
   return ks.size;
 }
-// najczęstsza linia dzienna (najwięcej kursów na jednym słupku): {ref, every: co ile minut} albo null
+// most frequent daytime line (most trips at one pole): {ref, every: every how many minutes} or null
 function topLine(st) {
   let top = null;
   if (st) st.per.forEach((v, k) => { if (!isNight(k) && v.maxPole && (!top || v.maxPole > top.v.maxPole)) top = { k, v }; });
@@ -151,7 +151,7 @@ function verdictLevel(perHour, walkMin) {
   }
   return lvl;
 }
-// najbliższy przystanek pieszo z zaznaczonego punktu: {name, w (m), outside}
+// nearest stop on foot from the marked point: {name, w (m), outside}
 function nearestWalk() {
   if (state.stopMode) return null;
   let best = null;
@@ -165,7 +165,7 @@ function nearestWalk() {
   }
   return best;
 }
-// werdykt „Czy to zadupie?”: {lvl (0–3 albo null, gdy jeszcze nie wiadomo), verdict}
+// „Czy to zadupie?” verdict: {lvl (0–3, or null when not yet known), verdict}
 function placeVerdict(st, walkMin, noStops, hasData) {
   if (noStops) {
     if (walkMin == null || walkMin > 15) return { lvl: 0, verdict: VERDICT[0] };
@@ -176,7 +176,7 @@ function placeVerdict(st, walkMin, noStops, hasData) {
   return { lvl: null, verdict: hasData ? 'Sprawdzam…' : '' };
 }
 const tile = (b, span, title = '') => `<div class="ph-t"${title ? ` title="${esc(title)}"` : ''}><b>${b}</b><span>${span}</span></div>`;
-// trzy kafelki pod werdyktem: kursy na godzinę, dojście pieszo (w przystanku: najczęstsza linia), liczba linii
+// three tiles under the verdict: trips per hour, walk (at a stop: most frequent line), number of lines
 function headTiles(st, nw, walkMin, noStops, hasData) {
   const tiles = [];
   if (st) {
@@ -191,7 +191,7 @@ function headTiles(st, nw, walkMin, noStops, hasData) {
   } else {
     tiles.push(walkMin != null ? tile(`${walkMin} min`, 'pieszo do przystanku', nw ? `${nw.name}, ${fmtDist(nw.w)}` : '') : tile('—', 'pieszo do przystanku'));
   }
-  // linie (jak w tytule: wszystkie w okręgu / na przystanku), nocne osobno
+  // lines (as in the title: all in the circle / at the stop), night ones separately
   const keys = new Set();
   (state.stopMode ? state.stopMode.poles : state.lastNearby).forEach(s => s.lines.forEach(l => keys.add(`${l.ref}|${l.type}`)));
   const nDay = [...keys].filter(k => !isNight(k)).length, nNight = keys.size - nDay;
@@ -217,7 +217,7 @@ export function renderPlaceHead() {
       + `<div class="ph-scale" aria-hidden="true">${VERDICT_SCALE.map((t, i) => `<span class="${i === lvl ? 'on' : ''}">${t}</span>`).join('')}</div>` : '')
     + `<div class="ph-tiles">${headTiles(st, nw, walkMin, noStops, hasData)}</div>`;
 }
-// punkty karty „Jak stąd dojedziesz”: najbliższy przystanek, częstotliwość, pierwszy i ostatni kurs
+// items of the „Jak stąd dojedziesz” card: nearest stop, frequency, first and last trip
 function placeFacts() {
   const facts = [];
   const nw = nearestWalk();
@@ -237,7 +237,7 @@ function placeFacts() {
   } else if (META && META.calendar && placePoles().length) facts.push('<span class="muted">Liczę częstotliwość kursów…</span>');
   return facts;
 }
-// czasy dojazdu do celów: moje miejsca, potem stałe
+// travel times to targets: my places, then the fixed ones
 function destsHtml() {
   if (WALK === false) return '<div class="muted" style="margin-top:8px">Czasy dojazdu wymagają sieci pieszej (walk.bin).</div>';
   if (!state.reach) return '<div class="muted" style="margin-top:8px">Liczę czasy dojazdu…</div>';

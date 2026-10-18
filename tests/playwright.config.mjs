@@ -1,9 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
-const PORT = process.env.MAPA_PORT || 8765;   // osobny port, gdy kilka przebiegów działa naraz
+const PORT = process.env.MAPA_PORT || 8765;   // separate port when several runs go at once
 
-// Testy strony przez headless Chromium. Strona jest serwowana z katalogu repo (python3 -m http.server),
-// Leaflet podstawiany z node_modules, kafelki OSM i Photon zastępowane (patrz helpers.mjs).
+// Page tests in headless Chromium. The page is served from the repo directory (python3 -m http.server),
+// Leaflet comes from node_modules, OSM tiles and Photon are stubbed (see helpers.mjs).
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.mjs',
@@ -15,13 +15,13 @@ export default defineConfig({
   reporter: [['list']],
   snapshotPathTemplate: '{testDir}/golden/{arg}{ext}',
   use: {
-    channel: 'chrome',   // zainstalowany Google Chrome (bez pobierania przeglądarki Playwrighta)
+    channel: 'chrome',   // installed Google Chrome (no Playwright browser download)
     baseURL: `http://127.0.0.1:${PORT}/`,
     locale: 'pl-PL',
     timezoneId: 'Europe/Warsaw',
   },
   webServer: {
-    // MAPA_DIR: inny katalog ze stroną (np. kopia z poprzedniego commitu do nagrania wzorców)
+    // MAPA_DIR: another directory with the page (e.g. a copy of the previous commit to record goldens)
     command: `python3 -m http.server ${PORT} --bind 127.0.0.1 --directory ${process.env.MAPA_DIR || '..'}`,
     url: `http://127.0.0.1:${PORT}/index.html`,
     reuseExistingServer: false,

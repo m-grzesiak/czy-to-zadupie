@@ -43,12 +43,12 @@ async function recalcIso(o, T) {
   applyDayType(state.isoDay);
   return { ...base, labels: runIso(o, ISO_TMAX), walk: false, mode: 'typical' };
 }
-// Typowy dzień z danego miejsca (do REACH_T min). Wspólne dla mapy zasięgu i listy celów,
-// więc włączenie zasięgu po wybraniu miejsca nic już nie liczy. Pamiętamy ostatni wynik.
+// Typical day from a given place (up to REACH_T min). Shared by the reach area map and the destination list,
+// so turning on the reach area after picking a place computes nothing more. We keep the last result.
 let typicalCache = null;
 export function typicalRun(o) {
   const key = originKey(o) + '|' + state.isoDay;
-  applyDayType(state.isoDay);   // czekanie w opisie etapów (legsText) musi pasować do typu dnia
+  applyDayType(state.isoDay);   // waits in the leg description (legsText) must match the day type
   if (typicalCache && typicalCache.key === key) return typicalCache.r;
   const r = runIsoWalk(o, REACH_T);
   typicalCache = { key, r };
@@ -61,7 +61,7 @@ export function setIsoT(T) {
   if (state.iso.walk && isoLayer && isoLayer.redraw) isoLayer.redraw(); else drawIso();
   renderIsoChip();
 }
-// zmiana czasu z chipa (− / +): przerysuj, odśwież statystyki w panelu i adres
+// time change from the chip (− / +): redraw, refresh panel stats and the URL
 export function applyIsoT(T) {
   if (!state.iso) return;
   state.isoT = Math.max(10, Math.min(60, T));
@@ -74,7 +74,7 @@ let isoToken = 0;
 export async function computeIso() {
   const o = isoOrigin();
   if (!o) return;
-  // wybrana linia i podgląd zasłaniałyby obszar zasięgu
+  // the selected line and preview would cover the reach area
   if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
   clearPreview();
   if (WALK === null) {
@@ -88,7 +88,7 @@ export async function computeIso() {
   const token = ++isoToken;
   const wasOn = !!state.iso;
   const next = await recalcIso(o, state.isoT);
-  if (token !== isoToken) return;               // w międzyczasie zmieniono punkt/tryb
+  if (token !== isoToken) return;               // point/mode changed in the meantime
   state.iso = next;
   restyleStops();
   drawIso();
@@ -105,7 +105,7 @@ export function clearIso() {
   if (was) { restyleStops(); renderTargetBox(); }
   renderIsoChip();
 }
-// najlepszy (najszybszy) słupek o tej nazwie — czas dotarcia do przystanku
+// best (fastest) pole with this name = arrival time at the stop
 function bestLabel(ids) {
   let best = null, bid = null;
   ids.forEach(id => { const l = state.iso && state.iso.labels.get(id); if (l && l.t <= state.iso.T && (!best || l.t < best.t)) { best = l; bid = id; } });
@@ -115,32 +115,32 @@ export function isoLegs(id) {
   const iso = state.iso;
   if (iso.walk) return walkLegs(id, iso);
   const { legs, first } = isoLegsApprox(iso.labels, id);
-  if (iso.o.point) {   // z punktu: dojście w linii prostej do przystanku startowego
+  if (iso.o.point) {   // from a point: straight-line walk to the starting stop
     const st = STOP_BY_ID.get(first), lab = iso.labels.get(first);
     if (st && lab) legs.unshift({ walk: true, pts: [[iso.o.lat, iso.o.lon], [st.lat, st.lon]], min: lab.t });
   }
   return legs;
 }
-// etapy z etykiet trybu przybliżonego, od przystanku id wstecz do startowego (first)
+// legs from approximate-mode labels, from stop id back to the starting one (first)
 function isoLegsApprox(labels, id) {
   const legs = [];
   let cur = id, first = id, guard = 0;
   while (cur && guard++ < 50) {
     const l = labels.get(cur);
     if (!l || l.origin) { first = cur; break; }
-    legs.unshift({ ...l, at: cur });   // at = przystanek końca etapu (to = indeks w kursie)
+    legs.unshift({ ...l, at: cur });   // at = stop at the end of the leg (to = index in the trip)
     cur = l.prev;
   }
   return { legs, first };
 }
-// Etapy trasy, każdy w osobnym wierszu: "pieszo 3 min", "152 Rondo Mogilskie → Dąbie · 4 przyst., 7 min"
+// Route legs, one per line: "pieszo 3 min", "152 Rondo Mogilskie → Dąbie · 4 przyst., 7 min"
 const lineChip = key => `<b class="leg-line">${esc(key.split('|')[0])}</b>`;
 export function legsText(legs, C = state.iso) {
   const parts = [];
   const nm = id => esc(STOP_BY_ID.get(id)?.name || '');
   legs.forEach(l => {
     if (l.walk) {
-      if (l.min != null && l.min < 0.5) return;               // np. przejście między słupkami tego samego węzła
+      if (l.min != null && l.min < 0.5) return;               // e.g. a walk between poles at the same node
       parts.push(l.min != null ? `pieszo ${Math.max(1, Math.round(l.min))} min` : 'pieszo');
     } else if (l.ride) {
       const { key } = csaRideInfo(l, C);
@@ -152,7 +152,7 @@ export function legsText(legs, C = state.iso) {
       const ride = Math.round(z[1] - a[1]), wp = tr.waitP[l.from];
       const wait = Math.round(l.wait ?? wp);
       const refs = [tr.key, ...altLines(l)].map(lineChip).join(' / ');
-      // pierwszy przejazd jest bez czekania (wychodzisz na odjazd) — przy rzadkiej linii warto wiedzieć, jak często jeździ
+      // the first ride has no wait (you leave for a departure); for an infrequent line it helps to know how often it runs
       const hw = 2 * wp;
       const note = l.wait === 0 ? (hw >= 20 && isFinite(hw) ? `, jedzie co ${Math.round(hw)} min` : '')
         : wait >= 1 ? ` + śr. ${wait} min czekania` : '';

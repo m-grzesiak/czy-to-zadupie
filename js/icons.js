@@ -1,8 +1,8 @@
 export const ICON_X = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 export const ICON_BACK = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-// Własna pinezka jako inline SVG — domyślna ikonka Leaflet to plik PNG z folderu
-// images/, którego CDN nie dostarcza razem z samym JS/CSS, więc bez tego byłaby
-// niewidoczna (złamany link do obrazka).
+// Custom pin as inline SVG: the default Leaflet icon is a PNG from the images/
+// folder, which the CDN does not serve along with the JS/CSS, so without this it would
+// be invisible (broken image link).
 export const clickIcon = L.divIcon({
   className: '',
   html: `<svg width="26" height="36" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg">

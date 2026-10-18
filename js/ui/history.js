@@ -7,8 +7,8 @@ import { selectPoint, selectStop } from './panel.js';
 import { placeLabel } from './target.js';
 
 // ---------------------------------------------------------------------------
-// Poprzednie miejsca startu: „← Wróć do: …” nad tytułem panelu. Przy porównywaniu dwóch okolic
-// (tu 39 min, tam 24 min) wystarczy jedno kliknięcie. Zasięg i cel zostają.
+// Previous origin places: „← Wróć do: …” above the panel title. When comparing two neighborhoods
+// (39 min here, 24 min there) one click is enough. The reach area and target stay.
 // ---------------------------------------------------------------------------
 const placeHist = [];
 function currentPlace() {
@@ -20,10 +20,10 @@ function currentPlace() {
   }
   return null;
 }
-// to samo miejsce: ten sam przystanek (albo przystanek o tej samej nazwie) lub punkt do 15 m
+// same place: the same stop (or a stop with the same name) or a point within 15 m
 const samePlaceRec = (a, b) => !!(a && b) && (a.stopId && b.stopId ? a.stopId === b.stopId || a.name === b.name
   : a.stopId || b.stopId ? false : haversineMeters(a.lat, a.lon, b.lat, b.lon) < 15);
-// next = miejsce, które zaraz zostanie wybrane (to samo miejsce nie trafia do historii)
+// next = the place about to be selected (the same place does not go into history)
 export function rememberPlace(next) {
   if (state.applyingState || state.restoringPlace) return;
   const cur = currentPlace();

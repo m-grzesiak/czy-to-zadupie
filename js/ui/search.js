@@ -11,16 +11,16 @@ const srInput = document.getElementById('sr-input');
 const srList = document.getElementById('sr-list');
 const srClear = document.getElementById('sr-clear');
 const RECENT_MAX = 5;
-let srState = { q: '', res: null };   // wpisane zapytanie i wynik: null, 'loading', 'error' albo lista
-let srItems = [];                     // wiersze listy, które da się wybrać (indeks = data-sr)
-let srActive = -1;                    // wiersz wybrany strzałkami
+let srState = { q: '', res: null };   // typed query and result: null, 'loading', 'error' or a list
+let srItems = [];                     // selectable list rows (index = data-sr)
+let srActive = -1;                    // row selected with the arrow keys
 let srTimer = 0;
 let srAbort = null;
-let srEnter = false;                  // Enter w trakcie pisania: wybierz pierwszy wynik, gdy przyjdzie
-const srCache = new Map();            // zapytanie (bez wielkości liter i polskich znaków) → wyniki
+let srEnter = false;                  // Enter while typing: pick the first result when it arrives
+const srCache = new Map();            // query (case-insensitive, without Polish diacritics) → results
 let srRecent = loadList(RECENT_KEY, p => p.name && Number.isFinite(p.lat) && Number.isFinite(p.lon)).slice(0, RECENT_MAX);
 const srTokens = q => fold(q).split(/[^a-z0-9]+/).filter(Boolean);
-// pogrubienie słów, które zaczynają się od wpisanych fragmentów
+// bold the words that start with the typed fragments
 function srMark(name, toks) {
   const on = new Array(name.length).fill(false);
   fold(name).replace(/[a-z0-9]+/g, (w, i) => {
@@ -35,7 +35,7 @@ function srMark(name, toks) {
   }
   return out + (open ? '</b>' : '');
 }
-// przystanki i stacje są na mapie z danych, w wynikach adresów tylko by się dublowały
+// stops and stations are on the map from the data, in address results they would only duplicate
 const SR_SKIP_TYPE = new Set(['country', 'state', 'county']);
 const SR_SKIP_VAL = new Set(['bus_stop', 'tram_stop', 'platform', 'stop_position', 'halt', 'station', 'stop']);
 function photonItems(json) {
@@ -50,14 +50,14 @@ function photonItems(json) {
     else if (p.type === 'street') { name = p.name; kind = 'street'; zoom = 16; }
     else if (p.type === 'city') { name = p.name; kind = 'area'; zoom = 14; }
     else if (p.type === 'district' || p.type === 'locality') { name = p.name; kind = 'area'; zoom = 15; }
-    else { name = p.name; kind = 'addr'; zoom = 17; }   // nazwane miejsce: szkoła, sklep, budynek…
-    // drugi wiersz: ulica nazwanego miejsca, dzielnica / osiedle, miejscowość (bez powtórzeń nazwy)
+    else { name = p.name; kind = 'addr'; zoom = 17; }   // named place: school, shop, building…
+    // second line: street of the named place, district / estate, town (without repeating the name)
     const sub = [];
     if (p.name && p.street) sub.push(p.street + (hn ? ' ' + hn : ''));
     [p.district || p.locality, p.city || (p.type === 'city' ? p.county : '')].forEach(x => {
       if (x && x !== name && !sub.includes(x)) sub.push(x);
     });
-    // ulica w OSM to wiele odcinków — jeden wynik na nazwę i miejscowość
+    // a street in OSM is many segments — one result per name and town
     const key = `${kind}|${fold(name)}|${fold(place)}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -101,7 +101,7 @@ function onSrInput() {
   }
   renderSr();
 }
-// czyści pole (i listę wyników)
+// clears the field (and the result list)
 function srReset() {
   srInput.value = '';
   onSrInput();
@@ -160,12 +160,12 @@ function srClose() {
   srList.hidden = true;
   srInput.setAttribute('aria-expanded', 'false');
 }
-// zamknięcie listy i zejście z pola
+// closing the list and leaving the field
 function srDismiss() {
   srClose();
   srInput.blur();
 }
-// lupa na telefonie, „/” na klawiaturze
+// magnifier on phones, „/” on the keyboard
 function srFocus() {
   srOpen();
   srInput.focus();
@@ -184,7 +184,7 @@ srInput.addEventListener('keydown', e => {
   } else if (e.key === 'Enter') {
     e.preventDefault();
     if (srActive >= 0) srChoose(srItems[srActive]);
-    // Enter w trakcie pisania: nie czekaj na opóźnienie, weź pierwszy wynik, gdy przyjdzie
+    // Enter while typing: don't wait for the delay, take the first result when it arrives
     else if (srState.res === 'loading') { srEnter = true; fetchPhoton(srState.q); }
     else if (Array.isArray(srState.res)) srChoose(srItems[0]);
   } else if (e.key === 'Escape') {
@@ -193,7 +193,7 @@ srInput.addEventListener('keydown', e => {
     else srDismiss();
   }
 });
-// klik w wynik nie zabiera fokusu polu (inaczej lista zniknęłaby przed kliknięciem)
+// clicking a result does not take focus from the field (otherwise the list would vanish before the click)
 srList.addEventListener('mousedown', e => e.preventDefault());
 srList.addEventListener('click', e => {
   const li = e.target.closest('[data-sr]');

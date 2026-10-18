@@ -15,8 +15,8 @@ import { myPlaces, renderPlaceCard, samePlace, saveMyPlaces } from './place.js';
 import { syncURL } from './url.js';
 
 // ---------------------------------------------------------------------------
-// Cel podróży: klik na mapie (w trybie zasięgu albo po "Wskaż cel"), wiersz listy albo link (#cel=).
-// Trasa liczona z mapy zasięgu, jeśli jest włączona (także "wyjazd o godzinie"), inaczej z typowego dnia.
+// Trip target: map click (in reach area mode or after "Wskaż cel"), list row or link (#cel=).
+// Route computed from the reach area map if it is on (also "depart at time"), otherwise from the typical day.
 // ---------------------------------------------------------------------------
 let targetLayer = null;
 export const targetClickMode = () => state.pickingTarget || !!state.iso;
@@ -37,23 +37,23 @@ export function nearestStopName(lat, lon) {
   STOPS.forEach(s => { const d = haversineMeters(lat, lon, s.lat, s.lon); if (d < 600 && (!best || d < best.d)) best = { d, s }; });
   return best ? best.s.name : null;
 }
-// nazwa miejsca bez etykiety: „okolice: <najbliższy przystanek>”, a daleko od przystanków `fallback`
+// place name without a label: „okolice: <nearest stop>”, and far from stops `fallback`
 export function placeLabel(lat, lon, fallback) {
   const n = nearestStopName(lat, lon);
   return n ? `okolice: ${n}` : fallback;
 }
-// start i cel razem w widocznej części mapy (bez przybliżania); margin = zapas przy krawędzi
+// origin and target together in the visible part of the map (without zooming in); margin = padding at the edge
 export function fitTargetView(margin, pad) {
   const o = isoOrigin();
   const b = L.latLngBounds([[state.target.lat, state.target.lon]].concat(o ? [[o.lat, o.lon]] : []));
   if (!viewBounds(margin).contains(b)) map.fitBounds(b, { ...fitPad(pad), maxZoom: map.getZoom() });
 }
-// granica czasu, do której liczy się trasa (zasięg „o godzinie” albo typowy dzień)
+// time limit up to which the route is computed (reach area „o godzinie” or typical day)
 const horizonOf = C => C && C.mode === 'time' ? ISO_TMAX : REACH_T;
 const minutes = t => Math.max(1, Math.round(t));
 const przesiadki = n => `${n} ${plural(n, 'przesiadka', 'przesiadki', 'przesiadek')}`;
 const checkLabel = () => state.target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce';
-// opts.pop = dymek przy celu (klik w mapę), opts.stopId = cel to przystanek ("Sprawdź" otworzy przystanek)
+// opts.pop = popup at the target (map click), opts.stopId = the target is a stop ("Sprawdź" opens the stop)
 export function setTarget(lat, lon, label, fromList, opts = {}) {
   const mine = myPlaces.find(p => samePlace(p, { lat, lon })) || DESTS.find(p => samePlace(p, { lat, lon }));
   state.target = { lat, lon, label: label || (mine && mine.name) || null, stopId: opts.stopId || null };
@@ -65,7 +65,7 @@ export function setTarget(lat, lon, label, fromList, opts = {}) {
   fitTargetView(0.1, 60);
   if (!state.targetPopOn) document.getElementById('target-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
-// Cel staje się nowym startem (zasięg zostaje włączony). Przystanek otwiera się jako przystanek.
+// The target becomes the new origin (the reach area stays on). A stop opens as a stop.
 export function targetAsOrigin() {
   if (!state.target) return;
   const t = state.target, st = t.stopId && STOP_BY_ID.get(t.stopId);
@@ -86,14 +86,14 @@ function drawTarget(r, C) {
   const ok = r && r.legs && isFinite(r.t);
   const parts = ok ? legLayers(r.legs, null, C) : [];
   const pin = L.marker([state.target.lat, state.target.lon], { icon: targetIcon, interactive: false, keyboard: false, zIndexOffset: 500 });
-  // czas dojazdu przy samej pinezce — widać go bez szukania w panelu
+  // travel time right at the pin — visible without searching the panel
   if (r) pin.bindTooltip(ok ? `${minutes(r.t)} min` : `> ${horizonOf(C)} min`,
     { permanent: true, direction: 'right', offset: [12, -18], className: 'term-label tgt-time' });
   parts.push(pin);
   targetLayer = L.layerGroup(parts).addTo(map);
 }
-// Dymek przy celu (po kliknięciu w mapę): czas dojazdu i "Sprawdź to miejsce" = nowy start jednym kliknięciem.
-// Dzięki temu klik w mapę przy włączonym zasięgu nie jest zagadką (cel czy nowe miejsce?) — pytamy na miejscu.
+// Popup at the target (after a map click): travel time and "Sprawdź to miejsce" = new origin with one click.
+// This way a map click with the reach area on is not a puzzle (target or new place?) — we ask on the spot.
 export let targetPop = null;
 let targetPopSync = false;
 function renderTargetPop(r, C, name) {
@@ -113,13 +113,13 @@ function renderTargetPop(r, C, name) {
   const html = `<div class="tp-t">${head}</div><div class="tp-name">${esc(name)}</div>
     <button type="button" class="tp-go" data-pop-origin="1">${checkLabel()}</button>`;
   if (!targetPop) {
-    // na telefonie dymek jest ukryty (cel pokazuje karta w arkuszu), więc bez przesuwania mapy pod niego
+    // on phones the popup is hidden (the target is shown by the card in the sheet), so no panning the map under it
     targetPop = L.popup({ className: 'target-pop', offset: [0, -30], autoPan: !isMobile(), autoPanPadding: [40, 40], maxWidth: 260, closeOnEscapeKey: false });
     targetPop.on('remove', () => {
       map.getContainer().classList.remove('tpop-open');
-      if (!targetPopSync) state.targetPopOn = false;   // zamknięty przez użytkownika (×) — cel zostaje
+      if (!targetPopSync) state.targetPopOn = false;   // closed by the user (×) — the target stays
     });
-    // nasłuch na samym dymku: przycisk znika w trakcie kliknięcia, klik nie może dojść do mapy
+    // listener on the popup itself: the button vanishes during the click, the click must not reach the map
     targetPop.on('add', () => {
       const el = targetPop.getElement();
       if (!el || el._tpBound) return;

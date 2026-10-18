@@ -9,13 +9,13 @@ import { fitTargetView } from './target.js';
 
 let sheetMode = null;
 let revealTimer = 0;
-// stan arkusza na telefonie: 'peek' (niski) albo 'full' (rozwinięty)
+// sheet state on phones: 'peek' (low) or 'full' (expanded)
 export function setSheet(st) {
   if (st === 'peek') panelEl.scrollTop = 0;
   state.sheetState = st;
   updateSheet();
 }
-// klasy stanu na #app / #panel / #layout i przycisk #m-back według bieżącego widoku
+// state classes on #app / #panel / #layout and the #m-back button according to the current view
 export function updateSheet() {
   const empty = !state.stopMode && !state.radiusCircle;
   const lineOpen = !empty && !!state.selectedRouteKey;
@@ -28,7 +28,7 @@ export function updateSheet() {
   const tog = document.getElementById('panel-toggle');
   tog.setAttribute('aria-expanded', String(state.sheetState === 'full'));
   tog.setAttribute('aria-label', state.sheetState === 'full' ? 'Zwiń panel' : 'Rozwiń panel');
-  // lewy górny róg mapy: × zamyka miejsce, z linii / zasięgu „← Okolica” (albo „← Przystanek”) wraca
+  // top-left corner of the map: × closes the place, from a line / reach area „← Okolica” (or „← Przystanek”) goes back
   const back = document.getElementById('m-back');
   const toPlace = lineOpen || isoOpen;
   back.hidden = empty;
@@ -40,12 +40,12 @@ export function updateSheet() {
   if (mode !== sheetMode) {
     const first = sheetMode === null;
     sheetMode = mode;
-    // po zmianie wysokości arkusza: miejsce, trasa albo zasięg mają być w widocznej części mapy
+    // after the sheet height changes: the place, route or reach area should be in the visible part of the map
     if (!first && isMobile()) { clearTimeout(revealTimer); revealTimer = setTimeout(revealFocus, 280); }
   }
 }
-// ile pikseli mapy od dołu zasłania arkusz (na komputerze 0). Dla „peek” i „full” docelowa wysokość
-// z CSS (46% / całość bez 68 px), a nie chwilowa — w trakcie animacji arkusza wysokość jest pośrednia.
+// how many map pixels the sheet covers from the bottom (0 on desktop). For „peek” and „full” the target height
+// from CSS (46% / all but 68 px), not the momentary one — during the sheet animation the height is intermediate.
 export function sheetPx() {
   if (!isMobile()) return 0;
   const a = layoutEl.getBoundingClientRect();
@@ -56,11 +56,11 @@ export function sheetPx() {
   const p = panelEl.getBoundingClientRect();
   return Math.max(0, Math.round(a.bottom - p.top));
 }
-// przyciski na górze mapy (telefon) zasłaniają pas tej wysokości
+// the buttons at the top of the map (phone) cover a strip of this height
 export const topUi = () => isMobile() ? 64 : 0;
-// --sheet-h podnosi legendę, atrybucję i + − nad arkusz
+// --sheet-h lifts the legend, attribution and + − above the sheet
 export function setSheetVar() { layoutEl.style.setProperty('--sheet-h', sheetPx() + 'px'); }
-// po zmianie wysokości arkusza: wybrana linia, zasięg, cel albo miejsce wraca do widocznej części mapy
+// after the sheet height changes: the selected line, reach area, target or place returns to the visible part of the map
 function revealFocus() {
   if (!map || !isMobile()) return;
   setSheetVar();
@@ -70,7 +70,7 @@ function revealFocus() {
   const o = isoOrigin();
   if (o && !viewBounds(0.12).contains([o.lat, o.lon])) panToVisible(L.latLng(o.lat, o.lon));
 }
-// telefon: uchwyt arkusza (stuknięcie) i przesunięcie palcem w górę / w dół
+// phone: sheet handle (tap) and finger swipe up / down
 document.getElementById('panel-toggle').addEventListener('click', () => setSheet(state.sheetState === 'full' ? 'peek' : 'full'));
 let touchY0 = null;
 let touchScroll0 = 0;

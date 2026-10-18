@@ -4,8 +4,8 @@ import { META, STOPS, STOP_INDEX, profileFor } from '../data.js';
 import { WALK, stopLatLng } from '../walk.js';
 import { chainPts, mergeWalkArea, originWalk, reachedSnap, stopLabels, streetPath, walkDijkstra } from './street.js';
 
-let TRANSFERS = null;   // przesiadki piesze między przystankami (transfers.bin): null = nie wczytano, false = brak
-const connCache = new Map();   // "p<P>_<okno>" -> Promise<Uint16Array>
+let TRANSFERS = null;   // walking transfers between stops (transfers.bin): null = not loaded, false = missing
+const connCache = new Map();   // "p<P>_<window>" -> Promise<Uint16Array>
 
 async function loadTransfers() {
   if (TRANSFERS !== null) return TRANSFERS;
@@ -30,8 +30,8 @@ function loadConnFile(name) {
   return connCache.get(name);
 }
 export const timeModeAvailable = () => !!(META && META.conns && META.walk && META.walk.transfers);
-// Connection Scan od t0 przez T min. Na przystanku k: arr = przyjazd, pk = jak dotarto (1 = start,
-// 2 = przejazd kursem pa z przystanku pb, odjazd pd; 3 = przesiadka pieszo z przystanku pa)
+// Connection Scan from t0 for T min. At stop k: arr = arrival, pk = how it was reached (1 = start,
+// 2 = ride on trip pa from stop pb, departure pd; 3 = walking transfer from stop pa)
 async function runCSA(o, ow, dateISO, t0, T) {
   const prof = profileFor(dateISO);
   if (!prof) return null;
@@ -52,7 +52,7 @@ async function runCSA(o, ow, dateISO, t0, T) {
       if (tt < arr[u]) { arr[u] = tt; board[u] = tt; pk[u] = 3; pa[u] = k; }
     }
   };
-  // start: przystanek (0 min, można przejść na sąsiedni słupek) albo przystanki z okręgu (dojście ulicami)
+  // start: a stop (0 min, may walk to a neighbouring pole) or stops in the circle (walk along streets)
   const start = (k, t) => { arr[k] = t; board[k] = t; pk[k] = 1; };
   if (o.point) ow.tw.forEach((t, k) => start(k, t0 + t));
   else {
@@ -83,7 +83,7 @@ export async function runIsoTime(o, T, dateISO, t0) {
   const ow = o.point ? originWalk(o, T) : null;
   const csa = await runCSA(o, ow, dateISO, t0, T);
   if (!csa) return null;
-  // obszar: samo chodzenie od osiągniętych przystanków (od startowych z punktu już doszliśmy ulicami)
+  // area: walking only from the reached stops (starting stops from a point were already reached via streets)
   const N = WALK.N, S = STOPS.length, seeds = [];
   for (let k = 0; k < S; k++) {
     const rel = csa.arr[k] - t0;
@@ -96,7 +96,7 @@ export async function runIsoTime(o, T, dateISO, t0) {
   for (let k = 0; k < S; k++) if (csa.pk[k] === 2 && res.time[N + k] <= T) rides++;
   return { labels, res, walk1: ow && ow.walk1, csa, rides };
 }
-// etapy przed przystankiem k w trybie "wyjazd o godzinie": przejazdy i przesiadki piesze
+// legs before stop k in "depart at time" mode: rides and walking transfers
 export function csaLegs(k, X) {
   const C = X.csa, out = [];
   let g = 0;
@@ -123,7 +123,7 @@ export function csaLegs(k, X) {
 }
 export function csaRideInfo(l, X = state.iso) {
   const C = X.csa, key = META.conns.routes[C.tripsTab[2 * l.ti]];
-  if (!l.pts) {   // przystanki pośrednie z połączeń tego kursu
+  if (!l.pts) {   // intermediate stops from this trip's connections
     const seq = [l.from];
     for (const ch of C.chunks) for (let i = 0; i < ch.length; i += 5) {
       if (ch[i + 4] === l.ti && ch[i + 2] >= l.dep && ch[i + 3] <= l.arr) seq.push(ch[i + 1]);

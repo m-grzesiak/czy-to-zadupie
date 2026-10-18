@@ -9,10 +9,10 @@ const PHOTON = JSON.parse(readFileSync(here('./fixtures/photon-karmelicka.json')
 
 const getMap = () => window.__mapa?.map ?? map;   // eslint-disable-line no-undef
 
-// wtorek, 8:00 — dzień roboczy w zakresie danych
+// Tuesday, 8:00 — a weekday within the data range
 export const TUESDAY_8 = '2026-10-20T08:00:00+02:00';
 
-// Zegar, Leaflet z node_modules, kafelki OSM (204), Photon z pliku. Zwraca listę błędów strony.
+// Clock, Leaflet from node_modules, OSM tiles (204), Photon from a file. Returns the list of page errors.
 export async function setup(page, { time = TUESDAY_8 } = {}) {
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
@@ -24,14 +24,14 @@ export async function setup(page, { time = TUESDAY_8 } = {}) {
   return errors;
 }
 
-// otwiera stronę z danym hashem i czeka, aż wszystko się policzy
+// opens the page with the given hash and waits until everything is computed
 export async function open(page, hash = '') {
   await page.goto('index.html' + (hash ? '#' + hash : ''));
   await expect(page.locator('#loading')).toBeHidden();
   await settle(page);
 }
 
-// czeka, aż sieć ucichnie, a panel i mapa przestaną się zmieniać
+// waits for the network to go idle and the panel and map to stop changing
 export async function settle(page) {
   await page.waitForLoadState('networkidle');
   let prev = null;
@@ -39,7 +39,7 @@ export async function settle(page) {
     await page.waitForTimeout(120);
     const cur = await page.evaluate(gm => {
       const m = (0, eval)(gm)(), c = m.getCenter();
-      // mapa w ruchu (animacja przesunięcia / przybliżenia) = jeszcze nie koniec
+      // map in motion (pan / zoom animation) = not done yet
       const moving = m._animatingZoom || (m._panAnim && m._panAnim._inProgress) || m._flyToFrame;
       return document.body.innerText + '|' + location.hash + '|' + c.lat.toFixed(6) + ',' + c.lng.toFixed(6) + '@' + m.getZoom()
         + '|' + document.querySelectorAll('.leaflet-overlay-pane canvas, .leaflet-marker-pane > *, .leaflet-tooltip').length
@@ -51,7 +51,7 @@ export async function settle(page) {
 }
 
 
-// punkt na ekranie dla współrzędnych (względem strony)
+// screen point for coordinates (relative to the page)
 export async function pagePoint(page, lat, lon) {
   return page.evaluate(([lat, lon, gm]) => {
     const m = (0, eval)(gm)();
@@ -64,7 +64,7 @@ export async function hoverLL(page, lat, lon) {
   const p = await pagePoint(page, lat, lon);
   await page.mouse.move(p.x - 30, p.y - 30);
   await page.mouse.move(p.x, p.y, { steps: 8 });
-  // Leaflet dławi mousemove (32 ms) — ostatni ruch mógł przepaść, więc jeszcze raz w ten sam punkt
+  // Leaflet throttles mousemove (32 ms) — the last move may have been dropped, so once more to the same point
   await page.waitForTimeout(80);
   await page.mouse.move(p.x + 1, p.y);
   await page.mouse.move(p.x, p.y);
@@ -84,7 +84,7 @@ export async function tapLL(page, lat, lon) {
   await settle(page);
 }
 
-// przesunięcie palcem po panelu (sztuczne TouchEvent, jak w CLAUDE.md)
+// finger swipe on the panel (synthetic TouchEvent, as in CLAUDE.md)
 export async function swipePanel(page, dy) {
   await page.evaluate(dy => {
     const el = document.getElementById('panel'), r = el.getBoundingClientRect();
@@ -98,7 +98,7 @@ export async function swipePanel(page, dy) {
 
 const norm = s => (s || '').replace(/[ \t ]+/g, ' ').split('\n').map(x => x.trim()).filter(Boolean);
 
-// Stan strony do porównania z zapisanym wzorcem: tekst panelu, adres, klasy, karty na mapie, widok
+// Page state to compare with the saved golden: panel text, URL, classes, map cards, view
 export async function state(page) {
   const s = await page.evaluate(gm => {
     const m = (0, eval)(gm)();

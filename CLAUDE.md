@@ -188,7 +188,7 @@ Sprawdzaj:
 
 ## Konwencje
 
-- **Komentarze w kodzie i komunikaty skryptów po polsku.** Nazwy zmiennych mogą być po angielsku. Wyjątek: CI (`update_data.sh`, `.github/workflows/`, `.gitlab-ci.yml`) — komentarze, nazwy kroków i komunikaty po angielsku.
+- **Komentarze w kodzie po angielsku** (JS, CSS, HTML, testy, Python, shell). Teksty interfejsu po polsku, komunikaty skryptów Pythona po polsku. CI (`update_data.sh`, `.github/workflows/`, `.gitlab-ci.yml`) — komentarze, nazwy kroków i komunikaty po angielsku.
 - **Po zmianie formatu danych** zaktualizuj `README.md` (kroki i opis plików) i ten plik.
 - **Kolory:**
   - tramwaj `--tram #a8322d`, autobus `--bus #2a5f74`, akcent `--accent #c98a2c`,

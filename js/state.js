@@ -1,12 +1,12 @@
-// Stan aplikacji: wybrane miejsce, linia, zasięg, cel, typ dnia… (jedno źródło prawdy dla widoków)
+// App state: selected place, line, reach area, target, day type… (single source of truth for views)
 export const state = {
-  stopMode: null, // {name, lat, lon, poles} gdy kliknięto przystanek
+  stopMode: null, // {name, lat, lon, poles} when a stop was clicked
   radiusCircle: null,
   radiusMeters: 500,
-  pointLabel: null, // adres z wyszukiwarki dla wybranego punktu (przeciągnięcie pinezki go kasuje)
+  pointLabel: null, // address from search for the selected point (dragging the pin clears it)
   lastNearby: [],
-  pointReach: null, // Map stopId -> metry po ulicach | null (brak dojścia); null = nie liczono
-  lastOutside: null, // najbliższe przystanki poza okręgiem, gdy w okręgu nie ma żadnego
+  pointReach: null, // Map stopId -> metres along streets | null (unreachable on foot); null = not computed
+  lastOutside: null, // nearest stops outside the circle when there are none inside
   selectedRouteKey: null,
   selectedVariant: 0,
   selectedDay: null,
@@ -20,7 +20,7 @@ export const state = {
   isoMode: 'typical', // 'typical' | 'time'
   isoDay: 'w',
   isoDate: null,
-  isoTime: null, // tryb czasu: data ISO i minuty od północy
+  isoTime: null, // time mode: ISO date and minutes after midnight
   target: null,
   targetPopOn: false,
   pickingTarget: false,

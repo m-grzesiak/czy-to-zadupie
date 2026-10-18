@@ -1,57 +1,57 @@
-// stopka panelu: z kiedy jest rozkład i na jakie dni
-// przewoźnicy z meta.sources w dopełniaczu: „Rozkład ZTP i Kolei Małopolskich”
+// panel footer: when the timetable is from and which days it covers
+// operators from meta.sources in the Polish genitive: „Rozkład ZTP i Kolei Małopolskich”
 export const SRC_GEN = { 'ZTP Kraków': 'ZTP', 'Koleje Małopolskie': 'Kolei Małopolskich' };
-// Przystanek = biała kropka z obwódką w kolorze tego, co tam jeździ (tramwaj / autobus; oba = tramwajowa).
-// Biały środek i ciemna, nasycona obwódka odcinają się od każdego tła mapy (zabudowa, drogi, zieleń),
-// a kolor od razu mówi, czy to przystanek tramwajowy. Przy zasięgu kropki są przygaszone.
+// Stop = white dot with an outline in the colour of what serves it (tram / bus; both = tram).
+// The white centre and dark, saturated outline stand out on any map background (buildings, roads, greenery),
+// and the colour tells at once whether it is a tram stop. With the reach area on, dots are dimmed.
 export const STOP_TRAM = '#a8322d';
 export const STOP_BUS = '#2a5f74';
 export const STOP_TRAIN = '#5a3d8a';
 export const STOP_COLOR = { tram: STOP_TRAM, bus: STOP_BUS, train: STOP_TRAIN };
-// rodzaje transportu: kolejność w listach (pociągi, tramwaje, autobusy), nazwy i klasy chipów
+// transport modes: order in lists (trains, trams, buses), names and chip classes
 const TYPE_ORDER = { train: 0, tram: 1, bus: 2 };
 export const TYPE_NAME = { tram: 'Tramwaj', bus: 'Autobus', train: 'Pociąg' };
 export const TYPE_CHIP = { tram: 't', bus: 'b', train: 'k' };
 export const typeCmp = (a, b) => (TYPE_ORDER[a] ?? 9) - (TYPE_ORDER[b] ?? 9);
 // ---------------------------------------------------------------------------
-// Mapa zasięgu: "gdzie dojadę w N minut z tego przystanku"
-// Model: jazda wg czasów z rozkładu + średnie czekanie (połowa odstępu kursów w dzień
-// roboczy 6–20) + przesiadki pieszo do 500 m. Dijkstra po przystankach.
+// Reach area map: "where can I get in N minutes from this stop"
+// Model: ride times from the timetable + average wait (half the headway on a
+// weekday 6–20) + walking transfers up to 500 m. Dijkstra over stops.
 // ---------------------------------------------------------------------------
 export const ISO_RAMP = ['#104281', '#1c5cab', '#2a78d6', '#5598e7', '#86b6ef'];
-  // blisko -> daleko
+  // near -> far
 export const WALK_MPM = 58;
-          // m/min w linii prostej (~4,5 km/h × objazd 1,3)
+          // m/min as the crow flies (~4.5 km/h × detour 1.3)
 export const WALK_MAX = 500;
-         // maks. dojście / przesiadka piesza
+         // max walk to a stop / walking transfer
 export const WAIT_MAX = Infinity;
-// Skąd liczymy: wybrany przystanek (start 0 min) albo zaznaczony punkt. Z punktu idziemy pieszo
-// po ulicach bez limitu okręgu (promień z suwaka dotyczy tylko listy linii w pobliżu).
-// poles = przystanki do ORIGIN_WALK_M w linii prostej: start trybu "wyjazd o godzinie" i trybu bez walk.bin.
+// Origin: the selected stop (start at 0 min) or a marked point. From a point we walk
+// along streets with no circle limit (the slider radius only applies to the list of nearby lines).
+// poles = stops within ORIGIN_WALK_M as the crow flies: start of "depart at time" mode and of the mode without walk.bin.
 export const ORIGIN_WALK_M = 2000;
 // ---------------------------------------------------------------------------
-// Sieć piesza z OSM (walk.bin). Gdy jest, zasięg liczymy jednym Dijkstrą po ulicach
-// i liniach naraz: chodzenie po prawdziwych drogach, przystanek "przyklejony" do ulicy.
-// Bez pliku — przybliżenie linią prostą × objazd (powyżej).
+// Walking network from OSM (walk.bin). When present, the reach area is one Dijkstra over streets
+// and lines at once: walking on real roads, each stop "snapped" to a street.
+// Without the file: straight-line approximation × detour (above).
 // ---------------------------------------------------------------------------
 export const WALK_SPEED = 75;
 // ===========================================================================
-// Tryb "wyjazd o godzinie": Connection Scan po prawdziwych odjazdach z conns/.
-// Jedno przejście po połączeniach posortowanych po odjeździe (kilka ms), potem
-// ten sam Dijkstra pieszy co w trybie typowym rysuje obszar od osiągniętych przystanków.
+// "Depart at time" mode: Connection Scan over real departures from conns/.
+// One pass over connections sorted by departure (a few ms), then
+// the same walking Dijkstra as in typical mode draws the area from the reached stops.
 // ===========================================================================
 export const TRANSFER_MIN = 1;
-// Czasy dojścia nie zależą od limitu, więc liczymy raz do maksimum suwaka,
-// a zmiana czasu tylko filtruje i przerysowuje.
+// Arrival times do not depend on the limit, so we compute once up to the slider maximum,
+// and changing the time only filters and redraws.
 export const ISO_TMAX = 60;
 export const REACH_T = 90;
-                            // typowy dzień: liczymy do 90 min (cele typu lotnisko)
-// Domyślnie dzień roboczy: przy ocenie miejsca liczą się dojazdy w tygodniu, nie dzisiejsza niedziela.
+                            // typical day: compute up to 90 min (destinations like the airport)
+// Weekday by default: rating a place is about weekday trips, not today's Sunday.
 export const DAY_NAMES = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela / święto' };
 export const DAY_SHORT = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela' };
 // ---------------------------------------------------------------------------
-// "Jak stąd dojedziesz": podsumowanie miejsca, czasy dojazdu do celów i własne miejsca.
-// Czasy z modelu "typowy dzień" (średnie czekanie), liczone raz do REACH_T i wspólne z mapą zasięgu.
+// "Jak stąd dojedziesz": place summary, travel times to destinations and the user's own places.
+// Times from the "typical day" model (average wait), computed once up to REACH_T and shared with the reach area map.
 // ---------------------------------------------------------------------------
 export const DESTS = [
   { name: 'Rynek Główny', lat: 50.06170, lon: 19.93730 },
@@ -63,16 +63,16 @@ export const DESTS = [
 ];
 export const PLACES_KEY = 'mapa.mojeMiejsca';
 // ---------------------------------------------------------------------------
-// Werdykt „Czy to zadupie?” + trzy liczby (nad promieniem, #place-head).
-// Poziom 0–3 z kursów na godzinę w jedną stronę (6–20, suma linii dziennych z przystanków w okręgu,
-// do których da się dojść) i dojścia do najbliższego przystanku.
+// „Czy to zadupie?” verdict + three numbers (above the radius, #place-head).
+// Level 0–3 from departures per hour in one direction (6–20, sum of daytime lines from reachable stops
+// in the circle) and the walk to the nearest stop.
 // ---------------------------------------------------------------------------
 export const VERDICT = ['Tak, to zadupie.', 'Trochę zadupie.', 'Raczej nie zadupie.', 'Nie, to nie zadupie.'];
 export const VERDICT_SCALE = ['zadupie', 'da się żyć', 'dobrze', 'pępek świata'];
 // ---------------------------------------------------------------------------
-// Wyszukiwarka adresów (#search): wpisany adres = nowe miejsce do sprawdzenia (selectPoint z etykietą).
-// Podpowiedzi z Photon (komoot, dane OSM) — Nominatim zabrania podpowiedzi przy pisaniu. Wyniki tylko
-// z prostokąta danych (bbox), bliższe środka mapy wyżej. Na telefonie wpisywanie na całym ekranie (#app.search-open).
+// Address search (#search): an entered address = new place to check (selectPoint with a label).
+// Suggestions from Photon (komoot, OSM data); Nominatim forbids search-as-you-type. Results only
+// from the data rectangle (bbox), those closer to the map centre ranked higher. On phones, typing is full screen (#app.search-open).
 // ---------------------------------------------------------------------------
 export const PHOTON_URL = 'https://photon.komoot.io/api/';
 export const RECENT_KEY = 'mapa.ostatnieAdresy';

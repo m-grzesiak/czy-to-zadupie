@@ -66,7 +66,7 @@ WALKABLE = {"footway", "pedestrian", "path", "steps", "living_street", "resident
 
 
 def read_pbf(src, coord, ways):
-    """Plik .osm.pbf (np. wycinek BBBike/Geofabrik): te same filtry co w walk_query.overpassql."""
+    """.osm.pbf file (e.g. a BBBike/Geofabrik extract): same filters as in walk_query.overpassql."""
     try:
         import osmium
     except ImportError:
@@ -102,7 +102,7 @@ def main():
     stops_path, sources = pos[0], pos[1:]
 
     coord = {}
-    ways = {}   # id -> węzły (kawałki na granicach się powtarzają)
+    ways = {}   # id -> nodes (chunks repeat at their borders)
     for src in sources:
         print(f"Wczytuję {src} ...", file=sys.stderr)
         if src.endswith(".pbf"):
@@ -120,14 +120,14 @@ def main():
     ways = list(ways.values())
     print(f"  {len(coord):,} punktów, {len(ways):,} dróg", file=sys.stderr)
 
-    # węzły grafu = skrzyżowania i końce dróg
+    # graph nodes = intersections and way ends
     use = defaultdict(int)
     for nd in ways:
         use[nd[0]] += 2
         use[nd[-1]] += 2
         for n in nd[1:-1]:
             use[n] += 1
-    # krawędzie: odcinek drogi między kolejnymi węzłami grafu, z geometrią pośrednią
+    # edges: way segment between consecutive graph nodes, with intermediate geometry
     raw = {}   # (a, b) -> (length, [pts a..b])
     for nd in ways:
         nd = [n for n in nd if n in coord]
@@ -149,7 +149,7 @@ def main():
                 start = i
     print(f"  {len(raw):,} odcinków między skrzyżowaniami", file=sys.stderr)
 
-    # składowe spójne: zostawiamy te, które mają sens (>= 1 km dróg)
+    # connected components: keep the meaningful ones (>= 1 km of ways)
     parent = {}
 
     def find(x):
@@ -167,19 +167,19 @@ def main():
         comp_len[find(a)] += L
     raw = {k: v for k, v in raw.items() if comp_len[find(k[0])] >= 1000}
 
-    # indeksy
+    # indices
     node_ids = sorted({n for k in raw for n in k})
     idx = {n: i for i, n in enumerate(node_ids)}
     nodes = [coord[n] for n in node_ids]
-    edges = []   # [a, b, length, geom(pts incl. końce)]
+    edges = []   # [a, b, length, geom(pts incl. ends)]
     for (a, b), (L, pts) in raw.items():
         edges.append([idx[a], idx[b], L, pts])
 
-    # --- przyklejenie przystanków: najbliższy punkt na krawędzi, krawędź dzielimy w tym miejscu ---
+    # --- snapping stops: nearest point on an edge, the edge is split there ---
     stops_doc = json.loads(Path(stops_path).read_text(encoding="utf-8"))
     stops = stops_doc["stops"]
     G = 0.004
-    grid = defaultdict(list)   # komórka -> [(edge_idx, seg_idx)]
+    grid = defaultdict(list)   # cell -> [(edge_idx, seg_idx)]
     for ei, e in enumerate(edges):
         pts = e[3]
         for k in range(len(pts) - 1):
@@ -213,7 +213,7 @@ def main():
         if best and best[4] <= 300:
             snaps[s["id"]] = best
 
-    # dzielenie krawędzi w punktach przyklejenia (kilka przystanków na jednej krawędzi — po kolei)
+    # split edges at snap points (several stops on one edge — in order)
     by_edge = defaultdict(list)
     for sid, (ei, k, t, q, d) in snaps.items():
         by_edge[ei].append((k, t, q, sid, d))
@@ -229,7 +229,7 @@ def main():
         k_prev = 0
         for (k, t, q, sid, d) in cuts:
             cur_pts += pts[k_prev + 1:k + 1]
-            # punkt przyklejenia tuż przy bieżącym węźle -> bez nowego węzła
+            # snap point right at the current node -> no new node
             if hav(q, nodes[cur_node]) < 2.0 and len(cur_pts) == 1:
                 stop_node[sid] = (cur_node, d)
                 k_prev = k
@@ -247,7 +247,7 @@ def main():
             new_edges.append([cur_node, b, Ls, seg])
     edges = new_edges
 
-    # --- zapis ---
+    # --- output ---
     geom, offs = [], [0]
     for e in edges:
         mid = simplify(e[3])[1:-1]
@@ -263,7 +263,7 @@ def main():
     buf += struct.pack(f"<{E}H", *[min(65535, max(1, round(e[2]))) for e in edges])
     Path(out).write_bytes(bytes(buf))
 
-    # --- przesiadki piesze między przystankami (po ulicach, do TRANSFER_MAX m) -> transfers.bin ---
+    # --- walking transfers between stops (along streets, up to TRANSFER_MAX m) -> transfers.bin ---
     import heapq
     TRANSFER_MAX = 500.0
     adj = defaultdict(list)
