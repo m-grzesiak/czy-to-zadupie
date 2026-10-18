@@ -12,9 +12,9 @@ import { clearPreview } from '../map/route.js';
 import { hidePointHover } from '../map/iso.js';
 import { clearIso, computeIso } from '../iso.js';
 import { renderIsoBox, renderIsoChip } from './iso-box.js';
-import { renderLineDetail, selectRoute, updateBadgeSelection } from './line.js';
+import { closeRoute, renderLineDetail, selectRoute, updateBadgeSelection } from './line.js';
 import { renderBoard } from './board.js';
-import { placeStatsFor, refreshPlace, renderPlaceHead } from './place.js';
+import { dayWord, placeStatsFor, refreshPlace, renderPlaceHead } from './place.js';
 import { renderTargetBox, setPicking } from './target.js';
 import { rememberPlace, renderBackPlace } from './history.js';
 import { syncURL } from './url.js';
@@ -23,7 +23,7 @@ import { setSheet, updateSheet } from './sheet.js';
 let clickMarker = null;
 // zamknięcie miejsca (× na telefonie): z powrotem sama mapa
 export function closePlace() {
-  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
+  closeRoute();
   setPicking(false);
   state.target = null; state.targetPopOn = false;
   renderTargetBox();
@@ -53,7 +53,7 @@ function addOriginMarker(latlng) {
   clickMarker = L.marker(latlng, { icon: clickIcon, draggable: true, keyboard: false, title: 'Przeciągnij, żeby zmienić miejsce', bubblingMouseEvents: false }).addTo(map);
   clickMarker.on('dragstart', () => { hideStopHover(); hidePointHover(); rememberPlace(); });
   clickMarker.on('drag', e => { if (state.radiusCircle) state.radiusCircle.setLatLng(e.target.getLatLng()); });
-  clickMarker.on('dragend', e => { if (state.selectedRouteKey) selectRoute(state.selectedRouteKey); selectPoint(e.target.getLatLng(), { remembered: true }); });
+  clickMarker.on('dragend', e => { closeRoute(); selectPoint(e.target.getLatLng(), { remembered: true }); });
 }
 export function selectPoint(latlng, opts = {}) {
   if (!opts.remembered) rememberPlace({ lat: latlng.lat, lon: latlng.lng });
@@ -63,7 +63,7 @@ export function selectPoint(latlng, opts = {}) {
   clearIso();
   showNotice('');
   state.stopMode = null;
-  document.getElementById('panel').classList.remove('stop-mode');
+  panelEl.classList.remove('stop-mode');
   clearPick();
   addOriginMarker(latlng);
   state.radiusCircle = L.circle(latlng, {
@@ -71,7 +71,7 @@ export function selectPoint(latlng, opts = {}) {
     interactive: false
   }).addTo(map);
   recompute(latlng);
-  document.getElementById('panel').scrollTop = 0;
+  panelEl.scrollTop = 0;
   renderBackPlace();
   updateSheet();
   syncURL(true);
@@ -91,7 +91,7 @@ export function selectStop(s) {
   state.lastOutside = null;
   showNotice('');
   state.pointReach = null;
-  document.getElementById('panel').classList.add('stop-mode');
+  panelEl.classList.add('stop-mode');
   clearPick();
   addOriginMarker(L.latLng(s.lat, s.lon));
   drawPoleLabels(poles);
@@ -101,7 +101,7 @@ export function selectStop(s) {
     selectRoute(state.selectedRouteKey);   // ponowny wybór = odznaczenie linii, której tu nie ma
   }
   renderStopPanel();
-  document.getElementById('panel').scrollTop = 0;
+  panelEl.scrollTop = 0;
   renderBackPlace();
   updateSheet();
   syncURL(true);
@@ -116,6 +116,10 @@ export function hwText(key, stats) {
   const h = 840 / st.maxPole;
   return h <= 90 ? `co ${Math.max(1, Math.round(h))} min` : `${st.maxPole}× w 6–20`;
 }
+// pociągi: najpierw linie SKA, potem pociągi nazwane; dalej numery po kolei
+const ska = k => (k.endsWith('|train') && !/^SKA/.test(k) ? 1 : 0);
+const sortRef = (a, b) => (a.split('|')[1] !== b.split('|')[1] ? typeCmp(a.split('|')[1], b.split('|')[1])
+  : ska(a) - ska(b) || a.localeCompare(b, 'pl', { numeric: true }));
 export function badgesHtml(stops, reach = null, stats = null) {
   const lines = new Map(), okLines = new Set();
   stops.forEach(s => s.lines.forEach(l => {
@@ -123,20 +127,16 @@ export function badgesHtml(stops, reach = null, stats = null) {
     lines.set(key, l);
     if (!reach || reach.get(s.id) !== null) okLines.add(key);
   }));
-  const dayWord = { w: 'w dzień roboczy', s: 'w sobotę', n: 'w niedzielę' }[state.isoDay];
+  const dw = dayWord();
   const badge = key => {
     const l = lines.get(key), off = !okLines.has(key), night = isNight(key);
     const hw = night ? '' : hwText(key, stats);
     const title = off ? `Linia ${l.ref} zatrzymuje się w okręgu tylko na przystankach, do których nie da się dojść pieszo z tego miejsca`
-      : night ? `Linia nocna ${l.ref}` : hw && hw !== 'nie kursuje' && hw !== 'rzadko' ? `Linia ${l.ref}: ${hw} ${dayWord}, w godz. 6–20`
-      : hw === 'nie kursuje' ? `Linia ${l.ref} ${dayWord} tu nie kursuje` : `Linia ${l.ref}`;
+      : night ? `Linia nocna ${l.ref}` : hw && hw !== 'nie kursuje' && hw !== 'rzadko' ? `Linia ${l.ref}: ${hw} ${dw}, w godz. 6–20`
+      : hw === 'nie kursuje' ? `Linia ${l.ref} ${dw} tu nie kursuje` : `Linia ${l.ref}`;
     return `<span class="badge ${l.type}${off ? ' unreach' : ''}${night ? ' night' : ''}${hw === 'nie kursuje' ? ' off' : ''}" role="button" tabindex="0" data-key="${esc(key)}" title="${esc(title)}">`
       + `${esc(l.ref)}${hw ? `<span class="hw">${hw}</span>` : ''}</span>`;
   };
-  // pociągi: najpierw linie SKA, potem pociągi nazwane
-  const ska = k => (k.endsWith('|train') && !/^SKA/.test(k) ? 1 : 0);
-  const sortRef = (a, b) => (a.split('|')[1] !== b.split('|')[1] ? typeCmp(a.split('|')[1], b.split('|')[1])
-    : ska(a) - ska(b) || a.localeCompare(b, 'pl', { numeric: true }));
   const keys = [...lines.keys()].sort(sortRef);
   const day = keys.filter(k => !isNight(k)), night = keys.filter(isNight);
   const group = (label, ks) => ks.length
@@ -144,8 +144,17 @@ export function badgesHtml(stops, reach = null, stats = null) {
   const html = group('Pociągi', day.filter(k => k.endsWith('|train'))) + group('Tramwaje', day.filter(k => k.endsWith('|tram')))
     + group('Autobusy', day.filter(k => !k.endsWith('|tram') && !k.endsWith('|train')))
     + group('Nocne', night)
-    + (stats && day.length ? `<div class="muted hw-note">Przy numerze: średnio co ile minut odjeżdża ${dayWord}, w godz. 6–20.</div>` : '');
+    + (stats && day.length ? `<div class="muted hw-note">Przy numerze: średnio co ile minut odjeżdża ${dw}, w godz. 6–20.</div>` : '');
   return { html, count: day.length, night: night.length };
+}
+// wspólne części widoków: zakładka „Dojazdy” punktu i lista linii ze szczegółami wybranej
+const PLACE_BOXES = '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>';
+const linesPane = b => `<div id="lines-box">${b.html}</div><div id="line-detail"></div>`;
+// treść panelu pod tytułem; `tabbed` = z zakładkami (na telefonie)
+function showResults(html, tabbed) {
+  const results = document.getElementById('results');
+  results.innerHTML = html;
+  results.classList.toggle('tabbed', tabbed);
 }
 // Widok przystanku: najpierw odjazdy (po to się klika przystanek), potem linie i dojazdy do celów
 function renderStopPanel() {
@@ -155,16 +164,13 @@ function renderStopPanel() {
   document.getElementById('panel-title').textContent = name;
   document.getElementById('panel-sub').textContent = `${b.count} ${linii(b.count)}`
     + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'nocna', 'nocne', 'nocnych')}` : '');
-  const html = tabsHtml('stop', [['odjazdy', 'Odjazdy'], ['linie', `Linie · ${b.count}`], ['dojazdy', 'Dojazdy']])
+  showResults(tabsHtml('stop', [['odjazdy', 'Odjazdy'], ['linie', `Linie · ${b.count}`], ['dojazdy', 'Dojazdy']])
     + tabPane('stop', 'odjazdy', '<div id="target-box"></div>'
       + `<button type="button" class="link-btn" data-around="1">Pokaż linie w promieniu ${state.radiusMeters} m od tego przystanku</button>`
       + '<div id="iso-box"></div>'
       + '<div class="ld-sec"><h3>Najbliższe odjazdy</h3><div id="board"><div class="muted">Wczytuję…</div></div></div>')
-    + tabPane('stop', 'linie', `<div id="lines-box">${b.html}</div><div id="line-detail"></div>`)
-    + tabPane('stop', 'dojazdy', '<div id="place-card" style="margin-top:16px"></div>');
-  const res = document.getElementById('results');
-  res.innerHTML = html;
-  res.classList.add('tabbed');
+    + tabPane('stop', 'linie', linesPane(b))
+    + tabPane('stop', 'dojazdy', '<div id="place-card" style="margin-top:16px"></div>'), true);
   renderIsoBox();
   updateBadgeSelection();
   renderLineDetail();
@@ -180,7 +186,7 @@ export function showEmpty() {
   state.pointReach = null;
   highlightStops(new Set());
   state.lastOutside = null;
-  document.getElementById('panel').classList.remove('stop-mode');
+  panelEl.classList.remove('stop-mode');
   document.getElementById('panel-title').textContent = isMobile() ? 'Stuknij dowolne miejsce na mapie' : 'Wybierz miejsce na mapie';
   document.getElementById('panel-sub').textContent = '';
   document.getElementById('results').innerHTML = EMPTY_HTML;
@@ -191,20 +197,28 @@ export function showEmpty() {
   renderBackPlace();
   announce();
 }
+// Chodzenie po ulicach od najbliższego węzła sieci pieszej, do `limit` minut
+function walkFromNode(nn, limit) {
+  return walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], limit, { walkOnly: true });
+}
+// dojście (m) do przystanku z wyniku walkFromNode: null = nie da się dojść, undefined = przystanek poza siecią pieszą
+function walkToStop(r, id) {
+  const k = STOP_INDEX().get(id), sn = WALK.snapNode[k];
+  if (sn < 0) return undefined;
+  const t = r.time[sn];
+  return isFinite(t) ? t * WALK_SPEED + WALK.snapLen[k] : null;
+}
 // Czy do przystanku w okręgu da się dojść pieszo z zaznaczonego punktu (po ulicach z walk.bin).
 // Limit: 2,5 × promień drogi — dalej to już "naokoło przez pół gminy", traktujemy jak brak dojścia.
 function computePointReach(latlng, nearby) {
   if (!WALK) return null;
   const nn = nearestNode(latlng.lat, latlng.lng);
   if (!nn) return null;
-  const limit = (state.radiusMeters * 2.5 + nn.d) / WALK_SPEED;
-  const r = walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], limit, { walkOnly: true });
-  const SI = STOP_INDEX(), out = new Map();
+  const r = walkFromNode(nn, (state.radiusMeters * 2.5 + nn.d) / WALK_SPEED);
+  const out = new Map();
   nearby.forEach(st => {
-    const k = SI.get(st.id), sn = WALK.snapNode[k];
-    if (sn < 0) { out.set(st.id, st.dist * 1.3); return; }      // przystanek poza siecią: przybliżenie
-    const t = r.time[sn];
-    out.set(st.id, isFinite(t) ? t * WALK_SPEED + WALK.snapLen[k] : null);
+    const w = walkToStop(r, st.id);
+    out.set(st.id, w === undefined ? st.dist * 1.3 : w);      // przystanek poza siecią: przybliżenie
   });
   return out;
 }
@@ -243,45 +257,28 @@ export function pickTab(id) {
     if (tabs && panelEl.scrollTop > tabs.offsetTop - 26) panelEl.scrollTop = tabs.offsetTop - 26;
   }
 }
-function renderPanel(nearby) {
-  clearPreview();
-  const title = document.getElementById('panel-title');
-  const sub = document.getElementById('panel-sub');
-  const results = document.getElementById('results');
-  state.lastOutside = null;
-
-  if (nearby.length === 0) {
-    // bez ślepego zaułka: najbliższe przystanki poza okręgiem + dojazdy do celów i tak działają
-    const c = state.radiusCircle.getLatLng();
-    const near = nearestOutside(c);
-    state.lastOutside = near;
-    title.textContent = `Brak przystanków w promieniu ${state.radiusMeters} m`;
-    sub.textContent = near.length ? `Najbliższy: ${near[0].name}, ${fmtDist(near[0].walk ?? near[0].dist)}${near[0].walk != null ? ' pieszo' : ''}.`
-      : 'W okolicy nie ma żadnego przystanku.';
-    let html = '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>';
-    if (near.length) {
-      const need = Math.min(2000, Math.ceil((near[0].dist + 50) / 100) * 100);
-      html += `<div class="group-label">Najbliższe przystanki</div><div class="stop-list near-list">` + near.map(g =>
-        `<div class="stop-item clickable" role="button" tabindex="0" data-stop-id="${esc(g.id)}" title="Pokaż odjazdy z tego przystanku">`
-        + `<div class="si-top"><b>${esc(g.name)}</b><span class="si-dist">${g.walk != null ? fmtDist(g.walk) + ' pieszo' : fmtDist(g.dist)}</span></div>`
-        + `<div class="si-meta">${Math.round(g.dist)} m w linii prostej</div></div>`).join('') + '</div>'
-        + (need > state.radiusMeters ? `<button type="button" class="link-btn" style="margin-top:8px" data-radius-to="${need}">Pokaż linie w promieniu ${need} m</button>` : '');
-    }
-    results.innerHTML = html;
-    results.classList.remove('tabbed');
-    renderIsoBox();
-    announce();
-    refreshPlace();
-    return;
+// Pusty okrąg — bez ślepego zaułka: najbliższe przystanki poza okręgiem + dojazdy do celów i tak działają
+function renderNoStopsPanel(title, sub) {
+  const near = nearestOutside(state.radiusCircle.getLatLng());
+  state.lastOutside = near;
+  title.textContent = `Brak przystanków w promieniu ${state.radiusMeters} m`;
+  sub.textContent = near.length ? `Najbliższy: ${near[0].name}, ${fmtDist(near[0].walk ?? near[0].dist)}${near[0].walk != null ? ' pieszo' : ''}.`
+    : 'W okolicy nie ma żadnego przystanku.';
+  let html = PLACE_BOXES;
+  if (near.length) {
+    const need = Math.min(2000, Math.ceil((near[0].dist + 50) / 100) * 100);
+    html += `<div class="group-label">Najbliższe przystanki</div><div class="stop-list near-list">` + near.map(g =>
+      `<div class="stop-item clickable" role="button" tabindex="0" data-stop-id="${esc(g.id)}" title="Pokaż odjazdy z tego przystanku">`
+      + `<div class="si-top"><b>${esc(g.name)}</b><span class="si-dist">${g.walk != null ? fmtDist(g.walk) + ' pieszo' : fmtDist(g.dist)}</span></div>`
+      + `<div class="si-meta">${Math.round(g.dist)} m w linii prostej</div></div>`).join('') + '</div>'
+      + (need > state.radiusMeters ? `<button type="button" class="link-btn" style="margin-top:8px" data-radius-to="${need}">Pokaż linie w promieniu ${need} m</button>` : '');
   }
-
-  const b = badgesHtml(nearby, state.pointReach, placeStatsFor(nearby));
-  title.textContent = `${b.count} ${linii(b.count)} w pobliżu`;
-  const nNames = new Set(nearby.map(s => s.name)).size;
-  sub.textContent = `${nNames} ${przystanki(nNames)} w promieniu ${state.radiusMeters} m`
-    + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'linia nocna', 'linie nocne', 'linii nocnych')}` : '') + '.';
-
-  // Jedna pozycja na nazwę przystanku (ZTP ma osobny słupek na każdy kierunek/peron)
+  showResults(html, false);
+  renderIsoBox();
+}
+// Jedna pozycja na nazwę przystanku (ZTP ma osobny słupek na każdy kierunek/peron): {id, name, dist, count, walk}
+// walk: metry pieszo (id = słupek z najkrótszym dojściem), null = brak dojścia, undefined = nie policzone
+function stopGroups(nearby) {
   const byName = new Map();
   nearby.forEach(s => {
     const g = byName.get(s.name);
@@ -291,17 +288,18 @@ function renderPanel(nearby) {
       if (wm != null && (g.walk == null || wm < g.walk)) { g.walk = wm; g.id = s.id; }
     } else byName.set(s.name, { id: s.id, name: s.name, dist: s.dist, count: 1, walk: wm });
   });
-  const km = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toLocaleString('pl', { maximumFractionDigits: 1 })} km`;
-  const nUn = [...byName.values()].filter(g => g.walk === null).length;
-  let stHtml = '<div class="group-label" style="margin-top:14px">Przystanki</div>';
-  if (nUn) stHtml += `<div class="unreach-note"><i></i>${nUn === 1 ? '1 przystanek' : `${nUn} ${nUn % 10 >= 2 && nUn % 10 <= 4 && (nUn % 100 < 12 || nUn % 100 > 14) ? 'przystanki' : 'przystanków'}`} w okręgu bez dojścia pieszo z tego miejsca (np. za rzeką albo torami).</div>`;
   // kolejność: najkrótsze dojście pieszo (jeśli znane), przystanki bez dojścia na końcu
   const sortKey = g => g.walk === null ? Infinity : g.walk != null ? g.walk : g.dist;
-  const groups = [...byName.values()].sort((a, b) => sortKey(a) - sortKey(b) || a.dist - b.dist);
-  stHtml += '<div class="stop-list">' + groups.map(g => {
-    // nazwa + dojście pieszo (kolumna); pod spodem odległość w linii prostej
+  return [...byName.values()].sort((a, b) => sortKey(a) - sortKey(b) || a.dist - b.dist);
+}
+// zakładka „Przystanki”: nazwa + dojście pieszo (kolumna); pod spodem odległość w linii prostej
+function stopListHtml(groups) {
+  const nUn = groups.filter(g => g.walk === null).length;
+  let html = '<div class="group-label" style="margin-top:14px">Przystanki</div>';
+  if (nUn) html += `<div class="unreach-note"><i></i>${nUn} ${przystanki(nUn)} w okręgu bez dojścia pieszo z tego miejsca (np. za rzeką albo torami).</div>`;
+  return html + '<div class="stop-list">' + groups.map(g => {
     const un = g.walk === null, known = g.walk != null;
-    const right = un ? '' : known ? `${km(g.walk)} pieszo` : `${Math.round(g.dist)} m`;
+    const right = un ? '' : known ? `${fmtDist(g.walk)} pieszo` : `${Math.round(g.dist)} m`;
     const meta = un ? `<em>brak dojścia pieszo</em> · ${Math.round(g.dist)} m w linii prostej`
       : known ? `${Math.round(g.dist)} m w linii prostej` : '';
     return `<div class="stop-item clickable${un ? ' unreach' : ''}" role="button" tabindex="0" data-stop-id="${esc(g.id)}"`
@@ -309,16 +307,28 @@ function renderPanel(nearby) {
       + `<div class="si-top"><b>${esc(g.name)}</b><span class="si-dist">${right}</span></div>`
       + (meta ? `<div class="si-meta">${meta}</div>` : '') + '</div>';
   }).join('') + '</div>';
-
-  const html = tabsHtml('point', [['dojazdy', 'Dojazdy'], ['linie', `Linie · ${b.count}`], ['przystanki', `Przystanki · ${nNames}`]])
-    + tabPane('point', 'dojazdy', '<div id="target-box"></div><div id="place-card"></div><div id="iso-box"></div>')
-    + tabPane('point', 'linie', `<div id="lines-box">${b.html}</div><div id="line-detail"></div>`)
-    + tabPane('point', 'przystanki', stHtml);
-  results.innerHTML = html;
-  results.classList.add('tabbed');
-  updateBadgeSelection();
-  renderLineDetail();
-  renderIsoBox();
+}
+// Widok punktu: tytuł z liczbą linii, zakładki Dojazdy / Linie / Przystanki
+function renderPanel(nearby) {
+  clearPreview();
+  const title = document.getElementById('panel-title');
+  const sub = document.getElementById('panel-sub');
+  state.lastOutside = null;
+  if (nearby.length === 0) renderNoStopsPanel(title, sub);
+  else {
+    const b = badgesHtml(nearby, state.pointReach, placeStatsFor(nearby));
+    title.textContent = `${b.count} ${linii(b.count)} w pobliżu`;
+    const nNames = new Set(nearby.map(s => s.name)).size;
+    sub.textContent = `${nNames} ${przystanki(nNames)} w promieniu ${state.radiusMeters} m`
+      + (b.night ? ` · do tego ${b.night} ${plural(b.night, 'linia nocna', 'linie nocne', 'linii nocnych')}` : '') + '.';
+    showResults(tabsHtml('point', [['dojazdy', 'Dojazdy'], ['linie', `Linie · ${b.count}`], ['przystanki', `Przystanki · ${nNames}`]])
+      + tabPane('point', 'dojazdy', PLACE_BOXES)
+      + tabPane('point', 'linie', linesPane(b))
+      + tabPane('point', 'przystanki', stopListHtml(stopGroups(nearby))), true);
+    updateBadgeSelection();
+    renderLineDetail();
+    renderIsoBox();
+  }
   announce();
   refreshPlace();
 }
@@ -327,11 +337,10 @@ function nearestOutside(c) {
   const cand = STOPS.map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, dist: haversineMeters(c.lat, c.lng, s.lat, s.lon) }))
     .filter(s => s.dist <= 3000).sort((a, b) => a.dist - b.dist).slice(0, 60);
   let r = null;
-  if (WALK) { const nn = nearestNode(c.lat, c.lng); if (nn) r = walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], 45, { walkOnly: true }); }
-  const SI = STOP_INDEX(), byName = new Map();
+  if (WALK) { const nn = nearestNode(c.lat, c.lng); if (nn) r = walkFromNode(nn, 45); }
+  const byName = new Map();
   cand.forEach(s => {
-    let walk = null;
-    if (r) { const k = SI.get(s.id), sn = WALK.snapNode[k]; if (sn >= 0 && isFinite(r.time[sn])) walk = r.time[sn] * WALK_SPEED + WALK.snapLen[k]; }
+    const walk = r ? walkToStop(r, s.id) ?? null : null;
     const key = walk ?? s.dist * 1.3, g = byName.get(s.name);
     if (!g || key < g.key) byName.set(s.name, { ...s, walk, key });
   });
