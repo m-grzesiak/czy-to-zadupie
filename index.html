@@ -600,7 +600,7 @@
   .ph-t b{ display:block; font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ph-t span{ display:block; font-size:11.5px; color:var(--ink-soft); line-height:1.25; margin-top:1px; }
   /* elementy tylko dla telefonu */
-  .rseg, .rseg-l, .ptabs, .m-back, .es-mob, .iso-tip, .iso-ramp{ display:none; }
+  .rseg, .rseg-l, .ptabs, .m-top, .es-mob, .iso-tip, .iso-ramp{ display:none; }
   .ir-bar{ display:flex; gap:2px; height:8px; }
   .ir-bar i{ flex:1; }
   .ir-bar i:first-child{ border-radius:4px 0 0 4px; }
@@ -671,6 +671,48 @@
   .tt .nx{ background:#fbf3e6; box-shadow:inset 0 0 0 1.5px var(--accent); border-radius:4px; font-weight:700; text-align:center; }
   .tt .alt{ color:var(--ink-soft); }
   .tt-note{ margin-top:6px; }
+  /* --- wyszukiwarka adresów --- */
+  .search{ position:relative; margin:0 0 14px; }
+  .sr-box{
+    display:flex; align-items:center; gap:7px; height:40px; padding:0 5px 0 11px;
+    border:1px solid var(--line); border-radius:11px; background:var(--paper); color:var(--ink-soft);
+  }
+  .sr-box:focus-within{
+    background:var(--paper-raised); border-color:color-mix(in srgb, var(--accent) 60%, var(--line));
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .sr-ico{ flex:0 0 auto; }
+  #sr-input{ flex:1; min-width:0; height:100%; border:0; padding:0; background:none; outline:none; font:inherit; font-size:14px; color:var(--ink); }
+  #sr-input::placeholder{ color:#8f8a7c; }
+  #sr-input::-webkit-search-cancel-button{ -webkit-appearance:none; appearance:none; }
+  .sr-clear, .sr-close{
+    flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:30px; height:30px; padding:0;
+    border:0; border-radius:50%; background:none; color:var(--ink-soft); cursor:pointer;
+  }
+  .sr-clear[hidden]{ display:none; }
+  .sr-clear:hover, .sr-close:hover{ background:color-mix(in srgb, var(--ink) 7%, transparent); color:var(--ink); }
+  .sr-close{ display:none; }
+  .sr-list{
+    position:absolute; left:0; right:0; top:calc(100% + 5px); z-index:30; margin:0; padding:4px; list-style:none;
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:12px;
+    box-shadow:0 14px 34px -10px rgba(28,28,26,.32); max-height:min(420px, 62vh); overflow-y:auto;
+  }
+  .sr-list[hidden]{ display:none; }
+  .sr-h{ padding:8px 9px 4px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); }
+  .sr-it{
+    display:grid; grid-template-columns:20px minmax(0, 1fr); gap:1px 9px; align-items:center;
+    padding:7px 9px; border-radius:8px; cursor:pointer;
+  }
+  .sr-it:hover, .sr-it.on{ background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .sr-it svg{ grid-row:1 / span 2; color:var(--ink-soft); justify-self:center; }
+  .sr-it.on svg{ color:var(--accent); }
+  .sr-n{ font-size:13.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sr-n b{ font-weight:700; }
+  .sr-m{ grid-column:2; font-size:11.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sr-st{ display:flex; align-items:center; gap:8px; padding:10px 9px; font-size:12.5px; color:var(--ink-soft); line-height:1.4; }
+  .sr-st i{ flex:0 0 auto; width:12px; height:12px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent); animation:loc-spin .8s linear infinite; }
+  .sr-attr{ padding:6px 9px 3px; font-size:10.5px; color:#8f8a7c; text-align:right; }
+  .ph-where .ph-addr{ display:block; font-size:14px; margin-bottom:1px; }
   /* --- telefon: mapa na cały ekran, panel jako arkusz wysuwany od dołu --- */
   .panel-toggle{ display:none; }
   @media (max-width: 760px){
@@ -696,15 +738,34 @@
     .iso-chip button{ height:38px; min-width:38px; }
     .iso-chip .ic-step, .iso-chip .ic-x{ width:38px; }
     .loading-pill{ top:calc(70px + env(safe-area-inset-top)); }
-    .m-back{
-      display:flex; position:absolute; z-index:1001; top:calc(12px + env(safe-area-inset-top)); left:12px;
-      height:44px; min-width:44px; padding:0 16px 0 12px; align-items:center; justify-content:center; gap:6px;
+    /* lewy górny róg: × / „← Okolica” i lupa (inny adres) */
+    .m-top{ display:flex; gap:8px; position:absolute; z-index:1001; top:calc(12px + env(safe-area-inset-top)); left:12px; }
+    .m-back, .m-search{
+      display:flex; height:44px; min-width:44px; padding:0 16px 0 12px; align-items:center; justify-content:center; gap:6px;
       border:0; border-radius:22px; background:var(--paper-raised); box-shadow:0 2px 10px rgba(28,28,26,.16);
       font:inherit; font-size:14px; font-weight:650; color:var(--ink); cursor:pointer;
     }
-    .m-back.x{ padding:0; width:44px; }
-    .m-back[hidden]{ display:none; }
-    .m-back:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+    .m-back.x, .m-search{ padding:0; width:44px; }
+    .m-back[hidden], .m-search[hidden]{ display:none; }
+    .m-back:focus-visible, .m-search:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+    /* wyszukiwarka: na karcie startowej pole, przy wybranym miejscu lupa; wpisywanie na całym ekranie */
+    #app:not(.st-empty):not(.search-open) #search{ display:none; }
+    .sr-box{ height:48px; border-radius:13px; }
+    #sr-input{ font-size:16px; }   /* mniej niż 16 px = iOS przybliża stronę przy wpisywaniu */
+    #app.search-open #panel{
+      top:0 !important; left:0 !important; right:0 !important; bottom:0 !important; height:auto !important; max-height:none !important;
+      border-radius:0 !important; box-shadow:none !important; overflow-y:auto !important;
+      padding:calc(10px + env(safe-area-inset-top)) 12px 16px !important;
+    }
+    #app.search-open #layout #panel > :not(#search){ display:none !important; }
+    #app.search-open #layout #panel #search{ display:block !important; margin:0; }
+    #app.search-open header, #app.search-open .m-top{ display:none !important; }
+    #app.search-open .sr-close{ display:flex; margin-left:-6px; }
+    #app.search-open .sr-ico{ display:none; }
+    #app.search-open .sr-list{ position:static; margin-top:8px; padding:0; border:0; box-shadow:none; max-height:none; border-radius:0; }
+    .sr-it{ padding:11px 9px; }
+    .sr-n{ font-size:15px; }
+    .sr-m{ font-size:12.5px; }
 
     #panel{
       position:absolute; left:0; right:0; bottom:0; z-index:1000; width:auto; height:46%;
@@ -809,10 +870,25 @@
   <div id="layout">
     <div id="map"></div>
     <!-- telefon: przycisk w lewym górnym rogu mapy (× zamyka miejsce, „← Okolica” wraca z linii / zasięgu) -->
+    <div class="m-top">
     <button type="button" class="m-back" id="m-back" hidden></button>
+    <button type="button" class="m-search" id="m-search" aria-label="Sprawdź inny adres" hidden><svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="4.8"/><path d="M10.6 10.6L14 14" stroke-linecap="round"/></svg></button>
+    </div>
     <div class="loading-pill" id="loading"><i></i><span>Wczytuję rozkład…</span></div>
     <div id="panel">
       <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false" aria-label="Rozwiń panel"></button>
+      <!-- wyszukiwarka adresów (Photon, komoot): wpisany adres = nowe miejsce do sprawdzenia -->
+      <div class="search" id="search">
+        <div class="sr-box">
+          <button type="button" class="sr-close" id="sr-close" aria-label="Zamknij wyszukiwanie"><svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <svg class="sr-ico" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="4.8"/><path d="M10.6 10.6L14 14" stroke-linecap="round"/></svg>
+          <input type="search" id="sr-input" autocomplete="off" spellcheck="false" enterkeyhint="search"
+            placeholder="Wpisz adres, np. Karmelicka 12" aria-label="Adres do sprawdzenia"
+            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sr-list">
+          <button type="button" class="sr-clear" id="sr-clear" aria-label="Wyczyść" hidden><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+        <ul class="sr-list" id="sr-list" role="listbox" aria-label="Wyniki wyszukiwania" hidden></ul>
+      </div>
       <button type="button" class="back-place" id="back-place" hidden></button>
       <h2 id="panel-title">Wybierz miejsce na mapie</h2>
       <p class="sub" id="panel-sub"></p>
@@ -833,7 +909,7 @@
 
       <div id="results">
         <div class="empty-state">
-          <p class="es-lead"><span class="es-desk">Kliknij dowolne miejsce albo przystanek</span><span class="es-mob">Pokażę, jak stamtąd dojedziesz tramwajem, autobusem i pociągiem — i czy to zadupie</span>.</p>
+          <p class="es-lead"><span class="es-desk">Wpisz adres albo kliknij dowolne miejsce lub przystanek</span><span class="es-mob">Pokażę, jak stamtąd dojedziesz tramwajem, autobusem i pociągiem — i czy to zadupie</span>.</p>
           <button type="button" class="es-locate" data-locate="1">
             <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="9" r="5.2"/><circle cx="9" cy="9" r="1.8" fill="currentColor" stroke="none"/><path d="M9 1v2.6M9 14.4V17M1 9h2.6M14.4 9H17" stroke-linecap="round"/></svg>
             Sprawdź, gdzie jestem</button>
@@ -954,6 +1030,7 @@ function updateSheet() {
   const back = document.getElementById('m-back');
   const toPlace = lineOpen || isoOpen;
   back.hidden = empty;
+  document.getElementById('m-search').hidden = empty;
   back.classList.toggle('x', !toPlace);
   back.innerHTML = toPlace ? `${ICON_BACK}${stopMode ? 'Przystanek' : 'Okolica'}` : ICON_X;
   back.setAttribute('aria-label', lineOpen ? 'Zamknij linię' : isoOpen ? 'Wyłącz zasięg' : 'Zamknij to miejsce');
@@ -3389,10 +3466,13 @@ function hotPole(c) {
 // ---------------------------------------------------------------------------
 const placeHist = [];
 let restoringPlace = false;
+let pointLabel = null;   // adres z wyszukiwarki dla wybranego punktu (przeciągnięcie pinezki go kasuje)
 function currentPlace() {
   if (stopMode) return { stopId: stopMode.id, lat: stopMode.lat, lon: stopMode.lon, name: stopMode.name };
   if (radiusCircle) {
-    const c = radiusCircle.getLatLng(), n = nearestStopName(c.lat, c.lng);
+    const c = radiusCircle.getLatLng();
+    if (pointLabel) return { lat: c.lat, lon: c.lng, name: pointLabel, label: pointLabel };
+    const n = nearestStopName(c.lat, c.lng);
     return { lat: c.lat, lon: c.lng, name: n ? `okolice: ${n}` : 'poprzednie miejsce' };
   }
   return null;
@@ -3425,7 +3505,7 @@ function backToPlace() {
   restoringPlace = true;
   try {
     if (selectedRouteKey) selectRoute(selectedRouteKey);
-    if (st) selectStop(st); else selectPoint(L.latLng(p.lat, p.lon));
+    if (st) selectStop(st); else selectPoint(L.latLng(p.lat, p.lon), { label: p.label });
   } finally { restoringPlace = false; }
   renderBackPlace();
   if (!viewBounds(0.15).contains([p.lat, p.lon])) panToVisible(L.latLng(p.lat, p.lon));
@@ -3442,6 +3522,7 @@ function addOriginMarker(latlng) {
 
 function selectPoint(latlng, opts = {}) {
   if (!opts.remembered) rememberPlace({ lat: latlng.lat, lon: latlng.lng });
+  pointLabel = opts.label || null;
   sheetState = 'peek';
   const keepIso = !!iso;
   clearIso();
@@ -4142,7 +4223,8 @@ function renderPlaceHead() {
   }
   tiles.push(tile(`${nDay} ${linii(nDay)}`, nNight ? `+ ${nNight} ${plural(nNight, 'nocna', 'nocne', 'nocnych')}` : 'bez nocnych'));
 
-  el.innerHTML = (nw ? `<div class="ph-where">${nw.outside ? 'Najbliższy przystanek' : 'Okolice przystanku'} <b>${esc(nw.name)}</b></div>` : '')
+  const addr = !stopMode && pointLabel ? `<b class="ph-addr">${esc(pointLabel)}</b>` : '';
+  el.innerHTML = (nw || addr ? `<div class="ph-where">${addr}${nw ? `${nw.outside ? 'Najbliższy przystanek' : 'Okolice przystanku'} <b>${esc(nw.name)}</b>` : ''}</div>` : '')
     + (verdict ? `<div class="ph-verdict${lvl == null ? ' wait' : ''}">${esc(verdict)}</div>` : '')
     + (lvl != null ? `<div class="ph-meter" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i class="${i <= lvl ? 'on' : ''}"></i>`).join('')}</div>`
       + `<div class="ph-scale" aria-hidden="true">${VERDICT_SCALE.map((t, i) => `<span class="${i === lvl ? 'on' : ''}">${t}</span>`).join('')}</div>` : '')
@@ -4377,13 +4459,222 @@ function saveTargetAsPlace() {
 
 // Esc: kolejno anuluje wskazywanie celu, cel, linię, mapę zasięgu
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || (e.target.matches && e.target.matches('input[type=text], input[type=time], select, textarea'))) return;
+  if (e.key !== 'Escape' || (e.target.matches && e.target.matches('input[type=text], input[type=search], input[type=time], select, textarea'))) return;
   if (pickingTarget) setPicking(false);
   else if (target) clearTarget();
   else if (selectedRouteKey) selectRoute(selectedRouteKey);
   else if (iso) { clearIso(); renderIsoBox(); syncURL(true); }
   else return;
   e.preventDefault();
+});
+
+// ---------------------------------------------------------------------------
+// Wyszukiwarka adresów (#search): wpisany adres = nowe miejsce do sprawdzenia (selectPoint z etykietą).
+// Podpowiedzi z Photon (komoot, dane OSM) — Nominatim zabrania podpowiedzi przy pisaniu. Wyniki tylko
+// z prostokąta danych (bbox), bliższe środka mapy wyżej. Na telefonie wpisywanie na całym ekranie (#app.search-open).
+// ---------------------------------------------------------------------------
+const PHOTON_URL = 'https://photon.komoot.io/api/';
+const RECENT_KEY = 'mapa.ostatnieAdresy';
+const srEl = document.getElementById('search'), srInput = document.getElementById('sr-input');
+const srList = document.getElementById('sr-list'), srClear = document.getElementById('sr-clear');
+let srState = { q: '', res: null }, srItems = [], srActive = -1, srTimer = 0, srAbort = null, srEnter = false;
+const srCache = new Map();   // zapytanie (bez wielkości liter i polskich znaków) → wyniki
+let srRecent = (() => { try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(p => p && p.name && Number.isFinite(p.lat) && Number.isFinite(p.lon)).slice(0, 5) : []; } catch (e) { return []; } })();
+
+// litera po literze (ł → l, ó → o…), więc indeksy w złożonym tekście zgadzają się z oryginałem
+const foldCh = c => c === 'ł' || c === 'Ł' ? 'l' : c.toLowerCase().normalize('NFD').charAt(0);
+const fold = s => s.split('').map(foldCh).join('');
+const srTokens = q => fold(q).split(/[^a-z0-9]+/).filter(Boolean);
+// pogrubienie słów, które zaczynają się od wpisanych fragmentów
+function srMark(name, toks) {
+  const on = new Array(name.length).fill(false);
+  fold(name).replace(/[a-z0-9]+/g, (w, i) => {
+    const t = toks.filter(t => w.startsWith(t)).reduce((m, t) => Math.max(m, t.length), 0);
+    for (let k = i; k < i + t; k++) on[k] = true;
+    return w;
+  });
+  let out = '', open = false;
+  for (let k = 0; k < name.length; k++) {
+    if (on[k] !== open) { out += on[k] ? '<b>' : '</b>'; open = on[k]; }
+    out += esc(name[k]);
+  }
+  return out + (open ? '</b>' : '');
+}
+
+// przystanki i stacje są na mapie z danych, w wynikach adresów tylko by się dublowały
+const SR_SKIP_TYPE = new Set(['country', 'state', 'county']);
+const SR_SKIP_VAL = new Set(['bus_stop', 'tram_stop', 'platform', 'stop_position', 'halt', 'station', 'stop']);
+function photonItems(json) {
+  const out = [], seen = new Set();
+  (json.features || []).forEach(f => {
+    const p = f.properties || {}, c = f.geometry && f.geometry.coordinates;
+    if (!c || SR_SKIP_TYPE.has(p.type) || p.osm_key === 'public_transport' || SR_SKIP_VAL.has(p.osm_value)) return;
+    const hn = p.housenumber, place = p.city || p.locality || p.district || '';
+    let name, kind, zoom;
+    if (hn && !p.name) { name = `${p.street || p.locality || p.district || p.city || ''} ${hn}`.trim(); kind = 'addr'; zoom = 17; }
+    else if (!p.name) return;
+    else if (p.type === 'street') { name = p.name; kind = 'street'; zoom = 16; }
+    else if (p.type === 'city') { name = p.name; kind = 'area'; zoom = 14; }
+    else if (p.type === 'district' || p.type === 'locality') { name = p.name; kind = 'area'; zoom = 15; }
+    else { name = p.name; kind = 'addr'; zoom = 17; }   // nazwane miejsce: szkoła, sklep, budynek…
+    // drugi wiersz: ulica nazwanego miejsca, dzielnica / osiedle, miejscowość (bez powtórzeń nazwy)
+    const sub = [];
+    if (p.name && p.street) sub.push(p.street + (hn ? ' ' + hn : ''));
+    [p.district || p.locality, p.city || (p.type === 'city' ? p.county : '')].forEach(x => {
+      if (x && x !== name && !sub.includes(x)) sub.push(x);
+    });
+    // ulica w OSM to wiele odcinków — jeden wynik na nazwę i miejscowość
+    const key = `${kind}|${fold(name)}|${fold(place)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ kind, name, sub: sub.join(', '), lat: c[1], lon: c[0], zoom });
+  });
+  return out.slice(0, 7);
+}
+function photonUrl(q) {
+  const p = new URLSearchParams({ q, limit: '15', lang: 'default' });
+  if (dataBoundsBase) p.set('bbox', [dataBoundsBase.getWest(), dataBoundsBase.getSouth(), dataBoundsBase.getEast(), dataBoundsBase.getNorth()].map(v => v.toFixed(4)).join(','));
+  if (map) { const c = map.getCenter(); p.set('lat', c.lat.toFixed(4)); p.set('lon', c.lng.toFixed(4)); }
+  return PHOTON_URL + '?' + p;
+}
+async function fetchPhoton(q) {
+  clearTimeout(srTimer);
+  if (srAbort) srAbort.abort();
+  const ctl = srAbort = new AbortController(), key = fold(q);
+  let res = 'error';
+  try {
+    const r = await fetch(photonUrl(q), { signal: ctl.signal });
+    if (r.ok) { res = photonItems(await r.json()); srCache.set(key, res); }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  if (srAbort === ctl) srAbort = null;
+  if (srState.q !== q) return;
+  srState.res = res;
+  renderSr();
+  if (srEnter) { srEnter = false; if (srItems.length) srChoose(srItems[0]); }
+}
+
+function onSrInput() {
+  const q = srInput.value.trim();
+  srClear.hidden = !srInput.value;
+  clearTimeout(srTimer);
+  if (srAbort) { srAbort.abort(); srAbort = null; }
+  srEnter = false;
+  srActive = -1;
+  srState = { q, res: null };
+  if (q.length >= 3) {
+    const key = fold(q);
+    if (srCache.has(key)) srState.res = srCache.get(key);
+    else { srState.res = 'loading'; srTimer = setTimeout(() => fetchPhoton(q), 250); }
+  }
+  renderSr();
+}
+
+const SR_ICON = {
+  addr: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 14.5s4.8-4.3 4.8-8A4.8 4.8 0 0 0 3.2 6.5c0 3.7 4.8 8 4.8 8z"/><circle cx="8" cy="6.4" r="1.7"/></svg>',
+  street: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 1.5L3 14.5M11 1.5l2 13M8 2.5v2M8 7v2M8 11.5v2"/></svg>',
+  area: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M1.5 4l4.3-2 4.4 2 4.3-2v10l-4.3 2-4.4-2-4.3 2z"/><path d="M5.8 2v10M10.2 4v10"/></svg>',
+  recent: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.3 1.6"/></svg>',
+};
+function renderSr() {
+  const { q, res } = srState, toks = srTokens(q);
+  let html = '';
+  srItems = [];
+  const row = (it, icon, nameHtml) => {
+    const i = srItems.push(it) - 1;
+    return `<li class="sr-it${i === srActive ? ' on' : ''}" id="sr-o${i}" role="option" aria-selected="${i === srActive}" data-sr="${i}">`
+      + `${SR_ICON[icon]}<span class="sr-n">${nameHtml}</span>${it.sub ? `<span class="sr-m">${esc(it.sub)}</span>` : ''}</li>`;
+  };
+  if (!q) {
+    if (srRecent.length) html = '<li class="sr-h" role="presentation">Ostatnio sprawdzane</li>' + srRecent.map(it => row(it, 'recent', esc(it.name))).join('');
+  } else if (q.length < 3) {
+    html = '<li class="sr-st" role="presentation">Wpisz jeszcze trochę — ulicę i numer, np. „Karmelicka 12”.</li>';
+  } else if (res === 'loading') {
+    html = '<li class="sr-st" role="presentation"><i></i>Szukam…</li>';
+  } else if (res === 'error') {
+    html = '<li class="sr-st" role="presentation">Wyszukiwarka adresów nie odpowiada. Spróbuj za chwilę albo kliknij miejsce na mapie.</li>';
+  } else if (res && !res.length) {
+    html = '<li class="sr-st" role="presentation">Nie znalazłem tego adresu w Krakowie ani okolicy. Sprawdź pisownię albo kliknij miejsce na mapie.</li>';
+  } else if (res) {
+    html = res.map(it => row(it, it.kind, srMark(it.name, toks))).join('')
+      + '<li class="sr-attr" role="presentation">Adresy: Photon · © OpenStreetMap</li>';
+  }
+  srList.innerHTML = html;
+  const open = !!html && (document.activeElement === srInput || appEl.classList.contains('search-open'));
+  srList.hidden = !open;
+  srInput.setAttribute('aria-expanded', String(open && srItems.length > 0));
+  if (srActive >= 0) srInput.setAttribute('aria-activedescendant', 'sr-o' + srActive);
+  else srInput.removeAttribute('aria-activedescendant');
+}
+
+function srRemember(it) {
+  srRecent = [{ name: it.name, sub: it.sub || '', lat: it.lat, lon: it.lon, zoom: it.zoom }]
+    .concat(srRecent.filter(p => p.name !== it.name || haversineMeters(p.lat, p.lon, it.lat, it.lon) > 30)).slice(0, 5);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(srRecent)); } catch (e) { /* tryb prywatny */ }
+}
+function srChoose(it) {
+  if (!it || !map) return;
+  srRemember(it);
+  srInput.value = '';
+  onSrInput();
+  srClose();
+  srInput.blur();
+  const ll = L.latLng(it.lat, it.lon);
+  if (selectedRouteKey) selectRoute(selectedRouteKey);
+  selectPoint(ll, { label: it.name });
+  setViewVisible(ll, it.zoom || 16);
+}
+function srOpen() {
+  if (isMobile()) appEl.classList.add('search-open');
+  renderSr();
+}
+function srClose() {
+  appEl.classList.remove('search-open');
+  srList.hidden = true;
+  srInput.setAttribute('aria-expanded', 'false');
+}
+// lupa na telefonie, „/” na klawiaturze
+function srFocus() {
+  srOpen();
+  srInput.focus();
+  srInput.select();
+}
+
+srInput.addEventListener('input', onSrInput);
+srInput.addEventListener('focus', srOpen);
+srInput.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!srItems.length) return;
+    e.preventDefault();
+    const n = srItems.length;
+    srActive = e.key === 'ArrowDown' ? (srActive + 1) % n : (srActive <= 0 ? n - 1 : srActive - 1);
+    renderSr();
+    document.getElementById('sr-o' + srActive)?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (srActive >= 0) srChoose(srItems[srActive]);
+    // Enter w trakcie pisania: nie czekaj na opóźnienie, weź pierwszy wynik, gdy przyjdzie
+    else if (srState.res === 'loading') { srEnter = true; fetchPhoton(srState.q); }
+    else if (Array.isArray(srState.res)) srChoose(srItems[0]);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (srInput.value) { srInput.value = ''; onSrInput(); }
+    else { srClose(); srInput.blur(); }
+  }
+});
+// klik w wynik nie zabiera fokusu polu (inaczej lista zniknęłaby przed kliknięciem)
+srList.addEventListener('mousedown', e => e.preventDefault());
+srList.addEventListener('click', e => {
+  const li = e.target.closest('[data-sr]');
+  if (li) srChoose(srItems[+li.dataset.sr]);
+});
+srEl.addEventListener('focusout', e => { if (!isMobile() && !srEl.contains(e.relatedTarget)) srClose(); });
+srClear.addEventListener('click', () => { srInput.value = ''; onSrInput(); srInput.focus(); });
+document.getElementById('sr-close').addEventListener('click', () => { srClose(); srInput.blur(); });
+document.getElementById('m-search').addEventListener('click', srFocus);
+document.addEventListener('keydown', e => {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || (e.target.matches && e.target.matches('input, select, textarea'))) return;
+  e.preventDefault();
+  srFocus();
 });
 
 // telefon: uchwyt arkusza (stuknięcie) i przesunięcie palcem w górę / w dół
@@ -4403,7 +4694,7 @@ panelEl.addEventListener('touchend', e => {
   if (touchY0 == null) return;
   const dy = e.changedTouches[0].clientY - touchY0;
   touchY0 = null;
-  if (appEl.classList.contains('st-empty') || panelEl.classList.contains('iso-open')) return;
+  if (appEl.classList.contains('st-empty') || appEl.classList.contains('search-open') || panelEl.classList.contains('iso-open')) return;
   if (dy < -40 && sheetState === 'peek') setSheet('full');
   else if (dy > 50 && sheetState === 'full' && touchScroll0 <= 0 && panelEl.scrollTop <= 0) setSheet('peek');
 }, { passive: true });
