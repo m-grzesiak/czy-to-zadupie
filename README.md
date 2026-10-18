@@ -12,7 +12,7 @@ Statyczna strona (jeden plik HTML, Leaflet + OpenStreetMap), bez serwera i bazy 
 
 Widok jest zapisany w adresie strony (np. `#s=stop_203_12529`), więc link do przystanku, punktu, linii albo zasięgu można wysłać dalej, a przycisk „Wstecz” w przeglądarce wraca do poprzedniego widoku.
 
-Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą obok strony jako pliki. Na GitHub Pages robi to CI w każdą niedzielę (skrypt `update_data.sh`), więc rozkład aktualizuje się sam.
+Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą obok strony jako pliki. Na GitHub Pages robi to CI dwa razy w tygodniu, w środę i niedzielę (skrypt `update_data.sh`), więc rozkład aktualizuje się sam.
 
 ## Pliki
 
@@ -22,7 +22,7 @@ Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą ob
 | `style.css` | wygląd strony | tak |
 | `js/` | kod strony jako moduły ES (bez budowania), start w `js/main.js` | tak |
 | `tests/` | testy strony w przeglądarce (Playwright), `npm test` | nie |
-| `.github/workflows/pages.yml` | cotygodniowa (niedziela) aktualizacja rozkładu i publikacja na GitHub Pages | nie |
+| `.github/workflows/pages.yml` | aktualizacja rozkładu w środy i niedziele i publikacja na GitHub Pages | nie |
 | `update_data.sh` | cała aktualizacja danych jednym poleceniem: kroki 1–4 i kontrola wyniku | nie |
 | `stops_data.json` | przystanki (z numerem słupka z tablicy ZTP), linie, trasy, czasy przejazdu, kalendarz, częstotliwości | tak |
 | `deps/*.json` | rozkład odjazdów w kawałkach siatki ~2 km (strona pobiera tylko potrzebne) | tak |
@@ -90,7 +90,7 @@ Przydatne opcje:
 - **`--inspect`:** nic nie generuje, tylko pokazuje strukturę plików GTFS. Przydatne, gdy ZTP zmieni format.
 - **`--bbox S,W,N,E`:** obszar mapy; przystanki spoza niego są pomijane (domyślnie obszar sieci pieszej z `download_walk.sh`: `49.89,19.57,50.26,20.37`). Zmieniasz go razem z zapytaniem w `download_walk.sh`.
 
-Rozkład obejmuje tylko okno dni od wygenerowania. Po jego końcu strona pokazuje rozkład z tego samego dnia tygodnia i informuje o tym. Na stronie publicznej CI odświeża dane w każdą niedzielę (krok 6); lokalnie odśwież je, gdy stopka robi się pomarańczowa.
+Rozkład obejmuje tylko okno dni od wygenerowania. Po jego końcu strona pokazuje rozkład z tego samego dnia tygodnia i informuje o tym. Na stronie publicznej CI odświeża dane w każdą środę i niedzielę (krok 6); lokalnie odśwież je, gdy stopka robi się pomarańczowa.
 
 ### 3. Sieć piesza — tylko gdy jej nie masz albo chcesz ją odświeżyć
 
@@ -138,11 +138,11 @@ Strony nie da się otworzyć podwójnym kliknięciem (`file://`). Przeglądarka 
 Strona: https://m-grzesiak.github.io/czy-to-zadupie/ (repo https://github.com/m-grzesiak/czy-to-zadupie, GitHub Pages). Na serwer trafiają tylko: `index.html`, `style.css`, `js/`, `stops_data.json`, `deps/`, `conns/`, `walk.bin` i `transfers.bin`. Pliki GTFS, `walk_osm/` i skrypty zostają w repozytorium albo lokalnie, ale nie są publikowane.
 
 1. **Dane generuje CI, nie commitujesz ich.** `stops_data.json`, `walk.bin`, `transfers.bin`, `deps/` i `conns/` są w `.gitignore`. Commitujesz tylko stronę i skrypty.
-2. Workflow `.github/workflows/pages.yml` uruchamia się po każdym pushu na `main` i w każdą niedzielę o 2:30 UTC (3:30 / 4:30 w Krakowie). Pobiera świeże GTFS, uruchamia `update_data.sh` (generowanie, sieć piesza, kontrola) i publikuje stronę z danymi. Postęp w zakładce Actions.
+2. Workflow `.github/workflows/pages.yml` uruchamia się po każdym pushu na `main` i w każdą środę i niedzielę o 2:30 UTC (3:30 / 4:30 w Krakowie). Pobiera świeże GTFS, uruchamia `update_data.sh` (generowanie, sieć piesza, kontrola) i publikuje stronę z danymi. Postęp w zakładce Actions.
 3. **Gdy jeden feed się nie pobierze** (serwer leży albo zwraca coś, co nie jest GTFS-em), `update_data.sh` bierze jego ostatnią dobrą kopię (w CI z pamięci podręcznej), a pozostałe feedy są świeże. Strona się publikuje, a przebieg na końcu jest oznaczany jako nieudany (mail od GitHuba, w logu lista feedów ze starej kopii). Gdy starej kopii nie ma, nic się nie publikuje.
 4. **Kontrola danych:** `update_data.sh` kończy się błędem, gdy przystanków jest mniej niż 4000, brakuje tramwajów, autobusów albo pociągów, mniej niż 99% przystanków jest przyklejonych do ulic albo kalendarz nie obejmuje dzisiejszego dnia. Wtedy nic się nie publikuje, zostaje poprzednia wersja (rozkład na 14 dni daje zapas), a GitHub wysyła maila o nieudanym przebiegu.
 5. **Sieć piesza** pochodzi z `walk_osm.tar.xz` w repo, więc CI nie zależy od Overpass. Odświeżasz ją ręcznie raz na kilka miesięcy (krok 3) i commitujesz nowe archiwum.
-6. GitHub wyłącza harmonogram po 60 dniach bez commitów. Workflow sam włącza go z powrotem po każdym niedzielnym przebiegu, więc nie trzeba nic robić.
+6. GitHub wyłącza harmonogram po 60 dniach bez commitów. Workflow sam włącza go z powrotem po każdym zaplanowanym przebiegu, więc nie trzeba nic robić.
 7. Jednorazowo w repo: Settings → Pages → Source: **GitHub Actions**.
 
 Strona wczytuje dane ścieżkami względnymi, więc działa też pod podkatalogiem (`/czy-to-zadupie/`).
@@ -178,4 +178,4 @@ Skrypt pobiera wszystkie pięć plików GTFS, usuwa stare `deps/` i `conns/`, ur
 - **`download_walk.sh` wisi albo ciągle dostaje odmowę.** Publiczne serwery Overpass bywają przeciążone. Spróbuj później albo użyj wycinka `.osm.pbf` (krok 3).
 - **Skrypt GTFS zgłasza błąd po zmianie formatu u ZTP.** Uruchom `python3 generate_stops_data.py --inspect GTFS_KRK_T.zip` i porównaj kolumny ze standardem GTFS.
 - **Stare pliki w `deps/` lub `conns/`.** `generate_stops_data.py` nadpisuje pliki, ale ich nie usuwa. `update_data.sh` czyści oba katalogi sam; przy ręcznych krokach usuń je przed krokiem 2.
-- **Nieudany niedzielny przebieg w Actions.** Sprawdź log kroku „Download timetables and generate data”: zwykle to chwilowo niedostępny serwer ZTP / Kolei Małopolskich (wystarczy Re-run) albo zmiana formatu GTFS (komunikat „DATA ERROR”).
+- **Nieudany zaplanowany przebieg w Actions.** Sprawdź log kroku „Download timetables and generate data”: zwykle to chwilowo niedostępny serwer ZTP / Kolei Małopolskich (wystarczy Re-run) albo zmiana formatu GTFS (komunikat „DATA ERROR”).
