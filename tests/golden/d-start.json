@@ -1,0 +1,34 @@
+{
+ "hash": "",
+ "app": "st-empty",
+ "layout": "",
+ "panel": "",
+ "panelText": [
+  "Wybierz miejsce na mapie",
+  "Wybierz miejsce na mapie",
+  "Promień",
+  "500 m",
+  "Wpisz adres albo kliknij dowolne miejsce lub przystanek.",
+  "Sprawdź, gdzie jestem",
+  "albo zacznij od przykładu:",
+  "Rynek Główny",
+  "Kurdwanów",
+  "Bronowice",
+  "Nowa Huta",
+  "Rozkład ZTP i Kolei Małopolskich z 18.10.2026, odjazdy na dni 18.10.2026–31.10.2026. 1975 przystanków."
+ ],
+ "chip": [],
+ "hover": [],
+ "popup": [],
+ "tooltips": [],
+ "legend": [
+  "tramwaj",
+  "autobus",
+  "kolej"
+ ],
+ "view": {
+  "lat": 50.062,
+  "lon": 19.937,
+  "zoom": 14
+ }
+}

@@ -1,0 +1,31 @@
+{
+ "hash": "",
+ "app": "st-empty",
+ "layout": "",
+ "panel": "",
+ "panelText": [
+  "Stuknij dowolne miejsce na mapie",
+  "Stuknij dowolne miejsce na mapie",
+  "Pokażę, jak stamtąd dojedziesz tramwajem, autobusem i pociągiem — i czy to zadupie.",
+  "Sprawdź, gdzie jestem",
+  "albo zacznij od przykładu:",
+  "Rynek Główny",
+  "Kurdwanów",
+  "Bronowice",
+  "Nowa Huta"
+ ],
+ "chip": [],
+ "hover": [],
+ "popup": [],
+ "tooltips": [],
+ "legend": [
+  "tramwaj",
+  "autobus",
+  "kolej"
+ ],
+ "view": {
+  "lat": 50.062,
+  "lon": 19.937,
+  "zoom": 14
+ }
+}

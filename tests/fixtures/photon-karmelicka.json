@@ -1,0 +1,7 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","geometry":{"type":"Point","coordinates":[19.9311,50.0672]},"properties":{"osm_key":"building","osm_value":"yes","type":"house","housenumber":"12","street":"Karmelicka","district":"Stare Miasto","city":"Kraków","postcode":"31-128"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[19.9289,50.0688]},"properties":{"osm_key":"highway","osm_value":"tertiary","type":"street","name":"Karmelicka","district":"Stare Miasto","city":"Kraków"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[19.9295,50.0690]},"properties":{"osm_key":"highway","osm_value":"tertiary","type":"street","name":"Karmelicka","district":"Stare Miasto","city":"Kraków"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[19.9290,50.0680]},"properties":{"osm_key":"highway","osm_value":"tram_stop","type":"house","name":"Karmelicka","city":"Kraków"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[19.9320,50.0665]},"properties":{"osm_key":"amenity","osm_value":"school","type":"house","name":"Szkoła przy Karmelickiej","street":"Karmelicka","housenumber":"9","district":"Stare Miasto","city":"Kraków"}}
+]}

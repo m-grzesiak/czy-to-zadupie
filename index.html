@@ -979,12 +979,14 @@ let selectedVariant = 0;
 let routeLayers = [];
 const depsCache = new Map();
 let ROUTES = {};  // "ref|type" -> {ref, type, color, shapes:[[[lat,lon],...],...]}
-let map, stopMarkers = [];
+let map;
+let stopMarkers = [];
 let clickMarker = null;
 let radiusCircle = null;
 let radiusMeters = 500;
 let routeLayerGroup = null;
-let routeStopsLayer = null, routeStopMarkers = [];
+let routeStopsLayer = null;
+let routeStopMarkers = [];
 let previewStopsLayer = null;
 let LINE_STOPS = null;   // "ref|type" -> [przystanki obsługiwane przez linię]
 let selectedRouteKey = null;
@@ -1005,8 +1007,12 @@ const EMPTY_HTML = document.getElementById('results').innerHTML;
 // ---------------------------------------------------------------------------
 const MQ_MOBILE = window.matchMedia('(max-width: 760px)');
 const isMobile = () => MQ_MOBILE.matches;
-const panelEl = document.getElementById('panel'), layoutEl = document.getElementById('layout'), appEl = document.getElementById('app');
-let sheetState = 'peek', sheetMode = null, revealTimer = 0;
+const panelEl = document.getElementById('panel');
+const layoutEl = document.getElementById('layout');
+const appEl = document.getElementById('app');
+let sheetState = 'peek';
+let sheetMode = null;
+let revealTimer = 0;
 const ICON_X = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ICON_BACK = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function setSheet(st) {
@@ -1184,6 +1190,7 @@ function clearRouteLayers() {
   if (routeStopsLayer) { map.removeLayer(routeStopsLayer); routeStopsLayer = null; }
   if (arrowLayer) { map.removeLayer(arrowLayer); arrowLayer = null; }
   routeStopMarkers = [];
+  routeLayers = [];
 }
 
 function lineStops(key) {
@@ -1235,7 +1242,8 @@ function routeColor(route) {
 }
 
 // Podgląd trasy po najechaniu na numer linii (bez przybliżania mapy)
-let previewLayer = null, previewKey = null;
+let previewLayer = null;
+let previewKey = null;
 function showPreview(key) {
   if (key === previewKey) return;
   clearPreview();
@@ -1262,7 +1270,6 @@ function selectRoute(key) {
   if (selectedRouteKey === key) {
     selectedRouteKey = null;
     clearRouteLayers();
-    routeLayers = [];
     routeStatus.textContent = '';
     restyleStops();
     updateBadgeSelection();
@@ -1461,7 +1468,7 @@ document.getElementById('results').addEventListener('mouseover', (e) => {
 });
 document.getElementById('results').addEventListener('mouseout', (e) => {
   const el = e.target.closest('[data-dest]');
-  if (el && !el.contains(e.relatedTarget) && !stopHoverOn && isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+  if (el && !el.contains(e.relatedTarget) && !stopHoverOn) clearIsoPath();
 });
 
 // ---------------------------------------------------------------------------
@@ -1579,10 +1586,14 @@ function profileFor(iso) {
   return d ? { p: cal[d], approx: d } : null;
 }
 
-let detailToken = 0, ttToken = 0;
+let detailToken = 0;
+let ttToken = 0;
 // stan widoku linii: zakładka, wybrany kurs (minuty od północy, do godzin na trasie),
 // rozwinięte wcześniejsze przystanki i wcześniejsze godziny rozkładu
-let ldTab = 'trasa', ldKurs = null, ldBefore = false, ldEarly = false;
+let ldTab = 'trasa';
+let ldKurs = null;
+let ldBefore = false;
+let ldEarly = false;
 const ldCache = new Map();
 // odjazdy linii z przystanku (wszystkie jego słupki) w danym dniu, pogrupowane po kierunku z rozkładu (headsign)
 async function lineDepsFor(np, key, day) {
@@ -1929,7 +1940,9 @@ function stopScale() { const z = map ? map.getZoom() : 14; return (z >= 16 ? 1.3
 // Przystanek = biała kropka z obwódką w kolorze tego, co tam jeździ (tramwaj / autobus; oba = tramwajowa).
 // Biały środek i ciemna, nasycona obwódka odcinają się od każdego tła mapy (zabudowa, drogi, zieleń),
 // a kolor od razu mówi, czy to przystanek tramwajowy. Przy zasięgu kropki są przygaszone.
-const STOP_TRAM = '#a8322d', STOP_BUS = '#2a5f74', STOP_TRAIN = '#5a3d8a';
+const STOP_TRAM = '#a8322d';
+const STOP_BUS = '#2a5f74';
+const STOP_TRAIN = '#5a3d8a';
 const STOP_COLOR = { tram: STOP_TRAM, bus: STOP_BUS, train: STOP_TRAIN };
 // rodzaje transportu: kolejność w listach (pociągi, tramwaje, autobusy), nazwy i klasy chipów
 const TYPE_ORDER = { train: 0, tram: 1, bus: 2 };
@@ -1981,18 +1994,6 @@ function initMap() {
     },
   });
   new Legend().addTo(map);
-  const IsoChip = L.Control.extend({
-    options: { position: 'topright' },
-    onAdd() {
-      const el = L.DomUtil.create('div', 'iso-chip');
-      el.hidden = true;
-      L.DomEvent.disableClickPropagation(el);
-      L.DomEvent.disableScrollPropagation(el);
-      el.addEventListener('click', onIsoChip);
-      isoChipEl = el;
-      return el;
-    },
-  });
   new IsoChip().addTo(map);
 
   stopMarkers = STOPS.map(s => {
@@ -2040,11 +2041,10 @@ function initMap() {
   map.getContainer().addEventListener('touchstart', () => { lastTouch = Date.now(); }, { passive: true });
   map.on('mousemove', e => {
     if (!iso || !iso.walk || Date.now() - lastTouch < 1000) return;
-    cancelAnimationFrame(pointRaf);
-    pointRaf = requestAnimationFrame(() => pointHover(e.latlng));
+    schedulePointHover(e.latlng);
   });
   // mouseleave samego kontenera (mapowe 'mouseout' odpala się też między elementami wewnątrz mapy)
-  map.getContainer().addEventListener('mouseleave', () => { cancelAnimationFrame(pointRaf); hidePointHover(); });
+  map.getContainer().addEventListener('mouseleave', cancelPointHover);
 
 }
 
@@ -2068,7 +2068,7 @@ function stopClicked(s) {
 function showStopHover(s) {
   if (hoverMute === s.name) return;
   hideStopHover();
-  if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
+  removePointHover();
   stopHoverOn = true;
   const kinds = new Set(s.lines.map(l => l.type));
   const c = kinds.size === 1 ? `var(--${[...kinds][0]})` : 'var(--accent)';
@@ -2119,7 +2119,9 @@ const WAIT_MAX = Infinity;   // połowa odstępu kursów, bez limitu: rzadkie li
 let iso = null;               // {origin, T, labels: Map(id -> {t, prev, ti, from, to, walk})}
 let isoT = 20;
 let isoGraph = null;
-let isoLayer = null, isoRenderer = null, isoPathLayer = null;
+let isoLayer = null;
+let isoRenderer = null;
+let isoPathLayer = null;
 
 // Skąd liczymy: wybrany przystanek (start 0 min) albo zaznaczony punkt. Z punktu idziemy pieszo
 // po ulicach bez limitu okręgu (promień z suwaka dotyczy tylko listy linii w pobliżu).
@@ -2888,7 +2890,8 @@ const REACH_T = 90;                            // typowy dzień: liczymy do 90 m
 let isoMode = 'typical';                       // 'typical' | 'time'
 // Domyślnie dzień roboczy: przy ocenie miejsca liczą się dojazdy w tygodniu, nie dzisiejsza niedziela.
 let isoDay = 'w';
-let isoDate = null, isoTime = null;            // tryb czasu: data ISO i minuty od północy
+let isoDate = null;
+let isoTime = null;            // tryb czasu: data ISO i minuty od północy
 const DAY_NAMES = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela / święto' };
 // Czekanie na przystanku = połowa odstępu kursów. waitP[pos]: odstęp z tego przystanku (hp), inaczej odstęp wariantu.
 function setTripWaits(tr, dt) {
@@ -2950,13 +2953,26 @@ function applyIsoT(T) {
 // Włączony: typ dnia / godzina, − 20 min +, ✕ (wyłącza, jak Esc). Widać go bez przewijania panelu,
 // więc zawsze wiadomo, że klik w mapę pokazuje czas dojazdu (dymek), a nie tylko wybiera miejsce.
 // ---------------------------------------------------------------------------
-let isoChipEl = null, hasHwCache = null;
+let isoChipEl = null;
+let hasHwCache = null;
 const hasHeadways = () => hasHwCache ?? (hasHwCache = Object.values(ROUTES).some(r => (r.trips || []).some(t => t && t.hw)));
 const ISO_ICON = `<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>`;
 const DAY_SHORT = { w: 'dzień roboczy', s: 'sobota', n: 'niedziela' };
 const CHIP_MINUS = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const CHIP_PLUS = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7h9M7 2.5v9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const CHIP_X = '<svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const IsoChip = L.Control.extend({
+  options: { position: 'topright' },
+  onAdd() {
+    const el = L.DomUtil.create('div', 'iso-chip');
+    el.hidden = true;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+    el.addEventListener('click', onIsoChip);
+    isoChipEl = el;
+    return el;
+  },
+});
 function renderIsoChip() {
   updateSheet();
   const el = isoChipEl;
@@ -3002,11 +3018,7 @@ async function computeIso() {
     if (!isoOrigin()) return;
   }
   setPicking(false);
-  if (!map.getPane('iso')) {
-    map.createPane('iso').style.zIndex = 350;
-    map.getPane('iso').classList.add('leaflet-iso-pane');
-    isoRenderer = L.canvas({ pane: 'iso', padding: 0.5 });
-  }
+  ensureIsoPane();
   const token = ++isoToken;
   const wasOn = !!iso;
   const next = await recalcIso(o, isoT);
@@ -3048,8 +3060,21 @@ function fitIsoView(onlyOut = false) {
 }
 let isoToken = 0;
 
-function drawIso() {
+function removeIsoLayer() {
   if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
+}
+function removeIsoLayers() {
+  removeIsoLayer();
+  clearIsoPath();
+}
+function ensureIsoPane() {
+  if (map.getPane('iso')) return;
+  map.createPane('iso').style.zIndex = 350;
+  map.getPane('iso').classList.add('leaflet-iso-pane');
+  isoRenderer = L.canvas({ pane: 'iso', padding: 0.5 });
+}
+function drawIso() {
+  removeIsoLayer();
   if (!iso) return;
   if (iso.walk) { drawIsoWalk(); return; }
   const circles = [];
@@ -3077,9 +3102,8 @@ function drawIso() {
 function clearIso() {
   const was = !!iso;
   iso = null;
-  if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
-  if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
-  if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+  removePointHover();
+  removeIsoLayers();
   if (was) { restyleStops(); renderTargetBox(); }
   renderIsoChip();
 }
@@ -3181,8 +3205,11 @@ const walkStyle = [
   { color: '#fff', weight: 7, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false },
   { color: '#1c1c1a', weight: 3.5, dashArray: '0.1 7', lineCap: 'round', interactive: false },
 ];
-function drawLegs(legs, tail, C = iso) {
+function clearIsoPath() {
   if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+}
+function drawLegs(legs, tail, C = iso) {
+  clearIsoPath();
   const parts = legLayers(legs, tail, C);
   if (parts.length) isoPathLayer = L.layerGroup(parts).addTo(map);
 }
@@ -3364,7 +3391,9 @@ async function fillNextDeparture(o) {
     + ` (${zaMin(wait)}) z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-at="${Math.max(0, Math.round(best.m - best.tw - 2))}">Wyjdź o ${fmt(Math.max(0, Math.round(best.m - best.tw - 2)))}</button>`;
 }
 
-let stopHoverOn = false, pointHoverLayer = null, pointRaf = 0;
+let stopHoverOn = false;
+let pointHoverLayer = null;
+let pointRaf = 0;
 
 // najszybciej osiągalny węzeł w promieniu R: czas dojścia do węzła + dojście od niego do punktu
 function bestReachableNode(lat, lon, R, t = iso.res.time) {
@@ -3423,27 +3452,39 @@ function pointHover(ll) {
   if (pointHoverLayer) pointHoverLayer.setLatLng(ll).setIcon(icon);
   else pointHoverLayer = L.marker(ll, { icon, interactive: false, pane: 'hover', keyboard: false }).addTo(map);
 }
-function hidePointHover() {
+function removePointHover() {
   if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
-  if (!stopHoverOn && isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+}
+function hidePointHover() {
+  removePointHover();
+  if (!stopHoverOn) clearIsoPath();
+}
+// hover w dowolnym miejscu mapy (zasięg): najwyżej raz na klatkę
+function schedulePointHover(ll) {
+  cancelAnimationFrame(pointRaf);
+  pointRaf = requestAnimationFrame(() => pointHover(ll));
+}
+function cancelPointHover() {
+  cancelAnimationFrame(pointRaf);
+  hidePointHover();
 }
 
 function hideStopHover() {
   stopHoverOn = false;
-  if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
+  clearIsoPath();
   if (hoverLayer) { map.removeLayer(hoverLayer); hoverLayer = null; }
 }
 
 function clearPick() {
   if (clickMarker) { map.removeLayer(clickMarker); clickMarker = null; }
   if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
-  if (poleLayer) { map.removeLayer(poleLayer); poleLayer = null; }
-  poleEls = new Map();
+  clearPoleLabels();
 }
 
 // Numery słupków (01, 02…) z tablic ZTP przy wybranym przystanku — te same co na tablicy odjazdów.
 // Słupki tramwajowy i autobusowy o tym samym numerze to jedno miejsce, więc jedna etykieta.
-let poleLayer = null, poleEls = new Map();
+let poleLayer = null;
+let poleEls = new Map();
 function drawPoleLabels(poles) {
   const byCode = new Map();
   poles.forEach(p => { if (p.c && !byCode.has(p.c)) byCode.set(p.c, p); });
@@ -3455,6 +3496,10 @@ function drawPoleLabels(poles) {
     return m;
   });
   poleLayer = L.layerGroup(marks).addTo(map);
+}
+function clearPoleLabels() {
+  if (poleLayer) { map.removeLayer(poleLayer); poleLayer = null; }
+  poleEls = new Map();
 }
 function hotPole(c) {
   poleEls.forEach((el, k) => el && el.classList.toggle('hot', !!c && k === c));
@@ -3544,7 +3589,8 @@ function selectPoint(latlng, opts = {}) {
 }
 
 // ids = słupki w zasięgu (pomarańczowe); unreach = w okręgu, ale bez dojścia pieszo (szare, przerywane)
-let hlIds = new Set(), hlUnreach = new Set();
+let hlIds = new Set();
+let hlUnreach = new Set();
 function highlightStops(ids, unreach = new Set()) {
   hlIds = ids; hlUnreach = unreach;
   routeStopMarkers.forEach(({ m, s }) => m.setStyle({ fillColor: ids.has(s.id) && !unreach.has(s.id) ? '#f0b862' : '#fff' }));
@@ -3729,7 +3775,9 @@ setInterval(() => { if (stopMode) renderBoard(); }, 60000);
 // Stan w adresie strony (#s=przystanek, #p=punkt&r=promień, l=linia, iso=minuty…):
 // link da się udostępnić, a "Wstecz" w przeglądarce wraca do poprzedniego widoku.
 // ---------------------------------------------------------------------------
-let applyingState = false, syncTimer = 0, syncPush = false;
+let applyingState = false;
+let syncTimer = 0;
+let syncPush = false;
 function stateHash() {
   const p = new URLSearchParams();
   if (stopMode) p.set('s', stopMode.id);
@@ -4048,7 +4096,9 @@ function removeMyPlace(i) {
 }
 const samePlace = (a, b) => a && b && Math.abs(a.lat - b.lat) < 2e-5 && Math.abs(a.lon - b.lon) < 2e-5;
 
-let reach = null, placeStats = null, placeToken = 0;
+let reach = null;
+let placeStats = null;
+let placeToken = 0;
 function reachFor(o) { return { o, ...typicalRun(o), walk: true, mode: 'typical', day: isoDay }; }
 // przystanki, z których liczymy częstotliwość: wybrany przystanek albo przystanki w okręgu z dojściem pieszo
 function placePoles() {
@@ -4057,7 +4107,8 @@ function placePoles() {
 }
 
 // Statystyki odjazdów z przystanków (deps/) dla reprezentatywnego dnia danego typu
-const statsDone = new Map(), statsPending = new Map();
+const statsDone = new Map();
+const statsPending = new Map();
 const statsKey = poles => isoDay + ':' + poles.map(p => p.id).sort().join(',');
 function placeStatsFor(stops) {
   const poles = stopMode ? stops : stops.filter(s => !pointReach || pointReach.get(s.id) !== null);
@@ -4292,7 +4343,9 @@ function renderPlaceCard() {
 // Cel podróży: klik na mapie (w trybie zasięgu albo po "Wskaż cel"), wiersz listy albo link (#cel=).
 // Trasa liczona z mapy zasięgu, jeśli jest włączona (także "wyjazd o godzinie"), inaczej z typowego dnia.
 // ---------------------------------------------------------------------------
-let target = null, pickingTarget = false, targetLayer = null;
+let target = null;
+let pickingTarget = false;
+let targetLayer = null;
 const targetIcon = L.divIcon({
   className: '',
   html: `<svg width="24" height="34" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg">
@@ -4362,7 +4415,9 @@ function drawTarget(r, C) {
 }
 // Dymek przy celu (po kliknięciu w mapę): czas dojazdu i "Sprawdź to miejsce" = nowy start jednym kliknięciem.
 // Dzięki temu klik w mapę przy włączonym zasięgu nie jest zagadką (cel czy nowe miejsce?) — pytamy na miejscu.
-let targetPopOn = false, targetPop = null, targetPopSync = false;
+let targetPopOn = false;
+let targetPop = null;
+let targetPopSync = false;
 function renderTargetPop(r, C, name) {
   const want = targetPopOn && target && map && isoOrigin();
   if (!want) { closeTargetPop(); return; }
@@ -4475,9 +4530,16 @@ document.addEventListener('keydown', e => {
 // ---------------------------------------------------------------------------
 const PHOTON_URL = 'https://photon.komoot.io/api/';
 const RECENT_KEY = 'mapa.ostatnieAdresy';
-const srEl = document.getElementById('search'), srInput = document.getElementById('sr-input');
-const srList = document.getElementById('sr-list'), srClear = document.getElementById('sr-clear');
-let srState = { q: '', res: null }, srItems = [], srActive = -1, srTimer = 0, srAbort = null, srEnter = false;
+const srEl = document.getElementById('search');
+const srInput = document.getElementById('sr-input');
+const srList = document.getElementById('sr-list');
+const srClear = document.getElementById('sr-clear');
+let srState = { q: '', res: null };
+let srItems = [];
+let srActive = -1;
+let srTimer = 0;
+let srAbort = null;
+let srEnter = false;
 const srCache = new Map();   // zapytanie (bez wielkości liter i polskich znaków) → wyniki
 let srRecent = (() => { try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(p => p && p.name && Number.isFinite(p.lat) && Number.isFinite(p.lon)).slice(0, 5) : []; } catch (e) { return []; } })();
 
@@ -4684,7 +4746,8 @@ document.getElementById('m-back').addEventListener('click', () => {
   else if (iso) { clearIso(); renderIsoBox(); syncURL(true); }
   else closePlace();
 });
-let touchY0 = null, touchScroll0 = 0;
+let touchY0 = null;
+let touchScroll0 = 0;
 panelEl.addEventListener('touchstart', e => {
   if (!isMobile() || e.touches.length !== 1) { touchY0 = null; return; }
   touchY0 = e.touches[0].clientY;

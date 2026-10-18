@@ -1,0 +1,28 @@
+{
+ "hash": "#p=50.06170,19.93730&r=500&iso=40&dzien=w&cel=50.02361,19.93386",
+ "app": "search-open",
+ "layout": "",
+ "panel": "has-head iso-open",
+ "panelText": [],
+ "chip": [
+  "40 min"
+ ],
+ "hover": [],
+ "popup": [
+  "22 min stąd · SKA2Kraków Łagiewniki",
+  "Sprawdź ten przystanek"
+ ],
+ "tooltips": [
+  "22 min"
+ ],
+ "legend": [
+  "tramwaj",
+  "autobus",
+  "kolej"
+ ],
+ "view": {
+  "lat": 49.904,
+  "lon": 20.009,
+  "zoom": 9.8
+ }
+}

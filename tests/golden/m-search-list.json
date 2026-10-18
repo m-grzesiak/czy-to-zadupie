@@ -1,0 +1,29 @@
+{
+ "hash": "",
+ "app": "st-empty search-open",
+ "layout": "",
+ "panel": "",
+ "panelText": [
+  "Karmelicka 12",
+  "Stare Miasto, Kraków",
+  "Karmelicka",
+  "Stare Miasto, Kraków",
+  "Szkoła przy Karmelickiej",
+  "Karmelicka 9, Stare Miasto, Kraków",
+  "Adresy: Photon · © OpenStreetMap"
+ ],
+ "chip": [],
+ "hover": [],
+ "popup": [],
+ "tooltips": [],
+ "legend": [
+  "tramwaj",
+  "autobus",
+  "kolej"
+ ],
+ "view": {
+  "lat": 50.062,
+  "lon": 19.937,
+  "zoom": 14
+ }
+}

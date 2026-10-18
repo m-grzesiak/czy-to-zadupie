@@ -1,0 +1,54 @@
+{
+ "hash": "#p=50.06170,19.93730&r=500&iso=40&dzien=w&cel=50.02361,19.93386",
+ "app": "",
+ "layout": "",
+ "panel": "has-head iso-open",
+ "panelText": [
+  "13 linii w pobliżu. 6 przystanków w promieniu 500 m · do tego 12 linii nocnych.",
+  "Cel: Kraków Łagiewniki",
+  "Usuń cel",
+  "22 min",
+  "pieszo 13 min",
+  "SKA2 Kraków Grzegórzki → Kraków Łagiewniki · 4 przyst., 9 min, jedzie co 60 min",
+  "Typowy dzień roboczy, ze średnim czekaniem.",
+  "★ Zapisz jako moje miejsce",
+  "Sprawdź ten przystanek",
+  "ZASIĘG Z ZAZNACZONEGO MIEJSCA",
+  "Wyłącz",
+  "Typowy dzień",
+  "Wyjazd o godzinie",
+  "Dzień roboczy",
+  "Sobota",
+  "Niedziela / święto",
+  "Czas",
+  "40 min",
+  "Dojedziesz do 667 przystanków, najdalej 26,8 km w linii prostej.",
+  "0",
+  "10",
+  "20",
+  "30",
+  "40 min",
+  "Stuknij miejsce na mapie — pokażę czas i trasę."
+ ],
+ "chip": [
+  "40 min"
+ ],
+ "hover": [],
+ "popup": [
+  "22 min stąd · SKA2Kraków Łagiewniki",
+  "Sprawdź ten przystanek"
+ ],
+ "tooltips": [
+  "22 min"
+ ],
+ "legend": [
+  "tramwaj",
+  "autobus",
+  "kolej"
+ ],
+ "view": {
+  "lat": 49.904,
+  "lon": 20.009,
+  "zoom": 9.8
+ }
+}

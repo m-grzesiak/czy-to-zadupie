@@ -1,0 +1,13 @@
+{
+  "name": "czy-to-zadupie-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "golden": "playwright test --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "leaflet": "1.9.4"
+  }
+}
