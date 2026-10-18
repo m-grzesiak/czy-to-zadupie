@@ -33,7 +33,8 @@ Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą ob
 | `GTFS_KRK_*.zip` / `GTFS_KRK_*/` | surowe rozkłady ZTP | nie |
 | `ald-gtfs.zip` | surowy rozkład autobusów Kolei Małopolskich (Małopolskie Linie Dowozowe) | nie |
 | `kml-ska-gtfs.zip` | surowy rozkład pociągów Kolei Małopolskich (SKA1–3 i pociągi nazwane) | nie |
-| `walk_osm/` | surowa sieć ulic z OSM (~95 MB) | nie |
+| `walk_osm/` | surowa sieć ulic z OSM (~95 MB), lokalnie | nie |
+| `walk_osm.tar.xz` | to samo spakowane (~8 MB), w repo — z niego korzysta CI | nie |
 
 ## Wymagania
 
@@ -91,13 +92,15 @@ Rozkład obejmuje tylko okno dni od wygenerowania. Po jego końcu strona pokazuj
 
 ### 3. Sieć piesza — tylko gdy jej nie masz albo chcesz ją odświeżyć
 
-Ulice zmieniają się rzadko, więc wystarczy to robić raz na kilka miesięcy. Jeśli masz już katalog `walk_osm/`, przejdź do kroku 4.
+Ulice zmieniają się rzadko, więc wystarczy to robić raz na kilka miesięcy. Jeśli masz już katalog `walk_osm/`, przejdź do kroku 4. Jeśli go nie masz, ale jest `walk_osm.tar.xz` z repo, rozpakuj go (`tar -xJf walk_osm.tar.xz`; `update_data.sh` robi to sam).
 
 ```
 bash download_walk.sh
 ```
 
-Skrypt pobiera sieć ulic i chodników z OpenStreetMap (Overpass API) w 12 kawałkach, po kolei, z ponawianiem i serwerami zapasowymi. Trwa to kilka minut. Jeśli publiczne serwery są przeciążone („too busy”, 406, 429), przerwij (Ctrl+C) i uruchom ponownie później. Pobrane kawałki są pomijane.
+Skrypt pobiera sieć ulic i chodników z OpenStreetMap (Overpass API) w 12 kawałkach, po kolei, z ponawianiem i serwerami zapasowymi. Trwa to kilka minut. Jeśli publiczne serwery są przeciążone („too busy”, 406, 429), przerwij (Ctrl+C) i uruchom ponownie później. Pobrane kawałki są pomijane, więc żeby odświeżyć całą sieć, najpierw usuń katalog: `rm -rf walk_osm && bash download_walk.sh`.
+
+Na koniec skrypt pakuje sieć do `walk_osm.tar.xz`. **Zacommituj to archiwum** — CI buduje `walk.bin` właśnie z niego, bez pobierania z Overpass.
 
 Alternatywa bez Overpass: wycinek `.osm.pbf` z https://extract.bbbike.org/ (obszar 19.57, 49.89 – 20.37, 50.26). W kroku 4 podajesz wtedy ten plik zamiast `walk_osm/*.json`.
 
@@ -136,7 +139,7 @@ Strona: https://m-grzesiak.github.io/czy-to-zadupie/ (repo https://github.com/m-
 2. Workflow `.github/workflows/pages.yml` uruchamia się po każdym pushu na `main` i codziennie o 2:30 UTC (3:30 / 4:30 w Krakowie). Pobiera świeże GTFS, uruchamia `update_data.sh` (generowanie, sieć piesza, kontrola) i publikuje stronę z danymi. Postęp w zakładce Actions.
 3. **Gdy jeden feed się nie pobierze** (serwer leży albo zwraca coś, co nie jest GTFS-em), `update_data.sh` bierze jego ostatnią dobrą kopię (w CI z pamięci podręcznej), a pozostałe feedy są świeże. Strona się publikuje, a przebieg na końcu jest oznaczany jako nieudany (mail od GitHuba, w logu lista feedów ze starej kopii). Gdy starej kopii nie ma, nic się nie publikuje.
 4. **Kontrola danych:** `update_data.sh` kończy się błędem, gdy przystanków jest mniej niż 4000, brakuje tramwajów, autobusów albo pociągów, mniej niż 99% przystanków jest przyklejonych do ulic albo kalendarz nie obejmuje dzisiejszego dnia. Wtedy nic się nie publikuje, zostaje poprzednia wersja (rozkład na 14 dni daje zapas), a GitHub wysyła maila o nieudanym przebiegu.
-5. **Sieć piesza** (`walk_osm/`) leży w pamięci podręcznej GitHub Actions. Pobiera się z Overpass tylko przy pierwszym przebiegu, po zmianie `download_walk.sh` albo po ręcznym uruchomieniu: Actions → „Deploy to GitHub Pages” → Run workflow → „Refresh the walking network from OpenStreetMap”. Jeśli Overpass odmówi, przebieg się nie uda, a stara sieć zostaje w pamięci; uruchom go ponownie później.
+5. **Sieć piesza** pochodzi z `walk_osm.tar.xz` w repo, więc CI nie zależy od Overpass. Odświeżasz ją ręcznie raz na kilka miesięcy (krok 3) i commitujesz nowe archiwum.
 6. GitHub wyłącza harmonogram po 60 dniach bez commitów. Workflow sam włącza go z powrotem po każdym codziennym przebiegu, więc nie trzeba nic robić.
 7. Jednorazowo w repo: Settings → Pages → Source: **GitHub Actions**.
 8. Na GitLab Pages to samo robi `.gitlab-ci.yml`; codzienny przebieg ustawiasz w Build → Pipeline schedules, a w Deploy → Pages wyłącz **Use unique domain**, inaczej adres dostanie losowy dopisek.
@@ -152,7 +155,7 @@ cd ~/Projects/mapa
 bash update_data.sh
 ```
 
-Skrypt pobiera wszystkie pięć plików GTFS, usuwa stare `deps/` i `conns/`, uruchamia `generate_stops_data.py` i `build_walk_graph.py` (sieć pieszą pobiera przez `download_walk.sh` tylko, gdy nie ma `walk_osm/`) i sprawdza wynik. Trwa ok. 1 min.
+Skrypt pobiera wszystkie pięć plików GTFS, usuwa stare `deps/` i `conns/`, uruchamia `generate_stops_data.py` i `build_walk_graph.py` (sieć pieszą bierze z `walk_osm/`, a gdy jej nie ma, rozpakowuje `walk_osm.tar.xz`) i sprawdza wynik. Trwa ok. 1 min.
 
 ## Jak liczone są dane (w skrócie)
 

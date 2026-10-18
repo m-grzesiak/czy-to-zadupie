@@ -4,7 +4,7 @@ Kontekst dla asystenta pracującego nad tym projektem. Instrukcja aktualizacji d
 
 ## Co to jest
 
-Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy), jeden plik `index.html` z Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` po pushu na `main` i codziennie o 2:30 UTC pobiera GTFS, uruchamia `update_data.sh` i publikuje stronę z danymi; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny. Wygenerowane dane (`stops_data.json`, `walk.bin`, `transfers.bin`, `deps/`, `conns/`) nie są w git — powstają w CI; `walk_osm/` jest w pamięci podręcznej Actions.
+Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy), jeden plik `index.html` z Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` po pushu na `main` i codziennie o 2:30 UTC pobiera GTFS, uruchamia `update_data.sh` i publikuje stronę z danymi; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny. Wygenerowane dane (`stops_data.json`, `walk.bin`, `transfers.bin`, `deps/`, `conns/`) nie są w git — powstają w CI. Sieć piesza jest w repo jako `walk_osm.tar.xz` (~8 MB, pakuje go `download_walk.sh`), więc CI nie zależy od Overpass; ostatnie dobre ZIP-y GTFS są w pamięci podręcznej Actions.
 
 Funkcje:
 - **Klik w punkt:** linie w promieniu (suwak 200–2000 m, domyślnie 500 m) i lista przystanków w okręgu, posortowana po dojściu pieszym. Promień dotyczy tylko listy linii — zasięg i dojazdy liczą chodzenie po ulicach bez limitu okręgu. Gdy w okręgu nie ma przystanku: 3 najbliższe (`nearestOutside`) i przycisk powiększenia promienia.
@@ -55,7 +55,8 @@ Funkcje:
 | `conns/p<P>_<okno>.bin`, `conns/p<P>_trips.bin` | połączenia do trybu „wyjazd o godzinie” |
 | `generate_stops_data.py` | GTFS ZTP → `stops_data.json` + `deps/` (tylko biblioteka standardowa) |
 | `build_walk_graph.py` | OSM (Overpass JSON albo `.osm.pbf` przez pyosmium) → `walk.bin` + pole `w` w przystankach |
-| `download_walk.sh` | pobiera sieć pieszą z Overpass w 12 kawałkach do `walk_osm/` |
+| `download_walk.sh` | pobiera sieć pieszą z Overpass w 12 kawałkach do `walk_osm/` i pakuje ją do `walk_osm.tar.xz` |
+| `walk_osm.tar.xz` | spakowana `walk_osm/`, commitowana; `update_data.sh` rozpakowuje ją, gdy brak `walk_osm/` |
 | `ald-gtfs.zip` | GTFS autobusów Kolei Małopolskich (lokalnie, w `.gitignore`) |
 | `kml-ska-gtfs.zip` | GTFS pociągów Kolei Małopolskich (lokalnie, w `.gitignore`) |
 
@@ -177,6 +178,6 @@ Sprawdzaj:
   - pasma zasięgu to jednobarwna rampa niebieska `ISO_RAMP` (zwalidowana jako porządkowa).
   - kropki przystanków: biały środek + obwódka `STOP_TRAM` / `STOP_BUS` (przystanek z tramwajem = tramwajowa), legenda w lewym dolnym rogu; zaznaczone pomarańczowe, bez dojścia szare przerywane, przy zasięgu przygaszone,
   - podkład OSM w oryginalnych kolorach (przygaszanie filtrem CSS było testowane i odrzucone).
-- **Na serwer idą tylko:** HTML, `stops_data.json`, `deps/`, `conns/`, `walk.bin`, `transfers.bin` — generowane w CI, nie commitowane (`.gitignore`). `walk_osm/` zostaje lokalnie / w cache Actions do przebudowy `walk.bin`. ZIP-y GTFS są jednorazowe.
+- **Na serwer idą tylko:** HTML, `stops_data.json`, `deps/`, `conns/`, `walk.bin`, `transfers.bin` — generowane w CI, nie commitowane (`.gitignore`). `walk_osm/` zostaje lokalnie, w repo jest jako `walk_osm.tar.xz` do przebudowy `walk.bin`. ZIP-y GTFS są jednorazowe.
 - **Nowy feed albo zmiana kroków generowania:** zmieniaj `update_data.sh` (z niego korzysta CI), a progi kontroli na jego końcu dopasuj do danych.
 - **Interfejs mówi „przystanek”, nie „słupek”.** Słupek (`stop_id`) to termin tylko techniczny.

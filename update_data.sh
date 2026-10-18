@@ -1,7 +1,7 @@
 #!/bin/bash
 # Full data update: downloads the GTFS feeds, generates stops_data.json, deps/ and conns/,
 # builds walk.bin and transfers.bin, then validates the result. Used both locally and in CI.
-# Usage: bash update_data.sh      (walking network is read from walk_osm/; downloaded via download_walk.sh if missing)
+# Usage: bash update_data.sh      (walking network: walk_osm/, unpacked from walk_osm.tar.xz if missing)
 set -euo pipefail
 cd "$(dirname "$0")"
 # "today" in the generator must be the Kraków date, also on a CI runner in UTC
@@ -39,9 +39,14 @@ for f in "${FEEDS[@]}"; do
   echo "$name" >> stale_feeds.txt
 done
 
-# 2. walking network (changes rarely; in CI it lives in the Actions cache)
+# 2. walking network (changes rarely): committed as walk_osm.tar.xz, so CI does not depend on Overpass;
+# download_walk.sh is only the last resort when even the archive is missing
 if ! ls walk_osm/part_*.json >/dev/null 2>&1 || [ "$(ls walk_osm/part_*.json | wc -l)" -lt 12 ]; then
-  bash download_walk.sh
+  if [ -f walk_osm.tar.xz ]; then
+    tar -xJf walk_osm.tar.xz
+  else
+    bash download_walk.sh
+  fi
 fi
 
 # 3. generation; remove old deps/ and conns/ because the generator never deletes files

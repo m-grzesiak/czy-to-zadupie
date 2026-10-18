@@ -1,15 +1,14 @@
 # GitLab Pages (backup): downloads fresh timetables, generates the data with update_data.sh and publishes.
 # Set up the daily run in Build → Pipeline schedules (e.g. 30 2 * * *, default branch).
-# The OSM walking network (walk_osm/) and the last good GTFS ZIPs live in the cache; a feed that fails
-# to download falls back to its previous copy (listed in stale_feeds.txt).
+# The OSM walking network comes from walk_osm.tar.xz in the repo. The last good GTFS ZIPs live in the cache;
+# a feed that fails to download falls back to its previous copy (listed in stale_feeds.txt).
 pages:
   stage: deploy
   image: python:3.12
   timeout: 1h
   cache:
-    key: inputs-v1
+    key: gtfs-v1
     paths:
-      - walk_osm/
       - "*.zip"
   script:
     - command -v unzip >/dev/null || (apt-get update -qq && apt-get install -y -qq unzip)

@@ -1,7 +1,6 @@
 # GitHub Pages: every day (and on every push to main) downloads fresh GTFS timetables, generates
 # the data with update_data.sh and publishes the site together with the data. Generated data is not in the repo.
-# The OSM walking network (walk_osm/) lives in the Actions cache; it is downloaded from Overpass only
-# when missing or when the workflow is run manually with "Refresh the walking network".
+# The OSM walking network comes from walk_osm.tar.xz in the repo (refreshed by hand, see README).
 # The last good GTFS ZIPs are cached too: if one feed fails to download, the previous copy is used,
 # the site is still deployed with the other feeds fresh, and the run is marked as failed afterwards.
 # One-time setup: Settings → Pages → Source: "GitHub Actions".
@@ -13,11 +12,6 @@ on:
   schedule:
     - cron: "30 2 * * *"   # UTC = 3:30 (winter) / 4:30 (summer) in Kraków
   workflow_dispatch:
-    inputs:
-      refresh_osm:
-        description: "Refresh the walking network from OpenStreetMap"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -39,26 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore walking network from cache
-        uses: actions/cache/restore@v4
-        with:
-          path: walk_osm
-          key: walk-osm-${{ hashFiles('download_walk.sh') }}-${{ github.run_id }}
-          restore-keys: walk-osm-${{ hashFiles('download_walk.sh') }}-
-
       - name: Restore last good GTFS feeds from cache
         uses: actions/cache/restore@v4
         with:
           path: "*.zip"
           key: gtfs-${{ github.run_id }}
           restore-keys: gtfs-
-
-      - name: Check whether the walking network needs downloading
-        id: osm
-        run: |
-          if [ "${{ inputs.refresh_osm }}" = "true" ]; then rm -rf walk_osm; fi
-          n=$(ls walk_osm/part_*.json 2>/dev/null | wc -l)
-          echo "download=$([ "$n" -lt 12 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Download timetables and generate data
         run: bash update_data.sh
@@ -68,13 +48,6 @@ jobs:
         with:
           path: "*.zip"
           key: gtfs-${{ github.run_id }}
-
-      - name: Save walking network to cache
-        if: steps.osm.outputs.download == 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: walk_osm
-          key: walk-osm-${{ hashFiles('download_walk.sh') }}-${{ github.run_id }}
 
       - name: Copy site and data to public/
         run: |
