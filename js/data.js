@@ -123,8 +123,12 @@ export function stopKind(s) {
   return s._kind;
 }
 export const STOP_INDEX = () => (STOP_INDEX._m ||= new Map(STOPS.map((s, k) => [s.id, k])));
-let hasHwCache = null;
-export const hasHeadways = () => hasHwCache ?? (hasHwCache = Object.values(ROUTES).some(r => (r.trips || []).some(t => t && t.hw)));
+// cached per ROUTES object, so a call before loadStops() does not stick
+let hasHwFor = null, hasHwCache = false;
+export function hasHeadways() {
+  if (hasHwFor !== ROUTES) { hasHwFor = ROUTES; hasHwCache = Object.values(ROUTES).some(r => (r.trips || []).some(t => t && t.hw)); }
+  return hasHwCache;
+}
 // Night line = no variant has a headway between 6 and 20 (in ZTP data exactly 6xx, 9xx, 62, 69)
 const nightCache = new Map();
 export function isNight(key) {

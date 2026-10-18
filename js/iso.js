@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { esc, fmt, haversineMeters, nowMinutes, todayISO } from './util.js';
+import { esc, fmt, haversineMeters, nowMinutes, przesiadki, todayISO } from './util.js';
 import { ISO_TMAX, ORIGIN_WALK_M, REACH_T, WALK_MPM } from './config.js';
 import { STOPS, STOP_BY_ID } from './data.js';
 import { WALK, loadWalk } from './walk.js';
@@ -135,7 +135,7 @@ function isoLegsApprox(labels, id) {
 }
 // Route legs, one per line: "pieszo 3 min", "152 Rondo Mogilskie → Dąbie · 4 przyst., 7 min"
 const lineChip = key => `<b class="leg-line">${esc(key.split('|')[0])}</b>`;
-export function legsText(legs, C = state.iso) {
+export function legsText(legs, C) {
   const parts = [];
   const nm = id => esc(STOP_BY_ID.get(id)?.name || '');
   legs.forEach(l => {
@@ -173,6 +173,6 @@ export function isoCardLine(s, sibs) {
   drawIsoPath(b.id);
   const legs = isoLegs(b.id), rides = legs.filter(l => !l.walk).length;
   return `<div class="sh-iso"><b>${Math.round(b.lab.t)} min</b> stąd${state.iso.csa ? ` · na miejscu ${fmt(Math.round(state.iso.csa.t0 + b.lab.t))}` : ''}`
-    + (rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : '')
-    + `<div class="sh-legs">${legsText(legs)}</div></div>`;
+    + (rides > 1 ? ` · ${przesiadki(rides - 1)}` : '')
+    + `<div class="sh-legs">${legsText(legs, state.iso)}</div></div>`;
 }

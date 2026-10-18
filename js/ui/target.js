@@ -1,5 +1,5 @@
 import { state } from '../state.js';
-import { esc, fmt, haversineMeters, plural } from '../util.js';
+import { esc, fmt, haversineMeters, przesiadki } from '../util.js';
 import { DAY_NAMES, DESTS, ISO_TMAX, REACH_T } from '../config.js';
 import { targetIcon } from '../icons.js';
 import { isMobile, showNotice } from '../dom.js';
@@ -51,7 +51,6 @@ export function fitTargetView(margin, pad) {
 // time limit up to which the route is computed (reach area „o godzinie” or typical day)
 const horizonOf = C => C && C.mode === 'time' ? ISO_TMAX : REACH_T;
 const minutes = t => Math.max(1, Math.round(t));
-const przesiadki = n => `${n} ${plural(n, 'przesiadka', 'przesiadki', 'przesiadek')}`;
 const checkLabel = () => state.target.stopId ? 'Sprawdź ten przystanek' : 'Sprawdź to miejsce';
 // opts.pop = popup at the target (map click), opts.stopId = the target is a stop ("Sprawdź" opens the stop)
 export function setTarget(lat, lon, label, fromList, opts = {}) {

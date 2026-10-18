@@ -1,5 +1,5 @@
 import { state } from '../state.js';
-import { esc, fmtDist, hm, linii, loadList, plural, saveJSON } from '../util.js';
+import { esc, fmtDist, hm, linii, loadList, plural, przesiadki, saveJSON } from '../util.js';
 import { DAY_NAMES, DESTS, PLACES_KEY, REACH_T, TYPE_CHIP, VERDICT, VERDICT_SCALE, WALK_SPEED } from '../config.js';
 import { panelEl } from '../dom.js';
 import { META, forEachDep, isNight, loadCellsFor, profileFor, repDate } from '../data.js';
@@ -139,7 +139,7 @@ function linesChips(lines) {
 function routeSummary(r) {
   if (!r || !isFinite(r.t)) return '';
   if (!r.rides) return 'pieszo';
-  return linesChips(r.lines) + (r.rides > 1 ? ` · ${r.rides - 1} ${plural(r.rides - 1, 'przesiadka', 'przesiadki', 'przesiadek')}` : '')
+  return linesChips(r.lines) + (r.rides > 1 ? ` · ${przesiadki(r.rides - 1)}` : '')
     + (r.walkMin >= 1 ? ` · pieszo ${Math.round(r.walkMin)} min` : '');
 }
 function verdictLevel(perHour, walkMin) {

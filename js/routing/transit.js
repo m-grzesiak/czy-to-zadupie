@@ -5,7 +5,7 @@ import { heapPop, heapPush } from './heap.js';
 
 const DAY_TYPES = ['w', 's', 'n'];
 // Transit graph (trips, boarding at stops, straight-line walks), built once: transitGraph()
-export let isoGraph = null;
+let isoGraph = null;
 export const transitGraph = () => isoGraph || (isoGraph = buildIsoGraph());
 function buildIsoGraph() {
   const trips = [], board = new Map();

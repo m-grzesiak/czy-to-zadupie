@@ -1,4 +1,3 @@
-import { state } from '../state.js';
 import { TRANSFER_MIN, WALK_SPEED } from '../config.js';
 import { META, STOPS, STOP_INDEX, profileFor } from '../data.js';
 import { WALK, stopLatLng } from '../walk.js';
@@ -121,7 +120,7 @@ export function csaLegs(k, X) {
   }
   return out;
 }
-export function csaRideInfo(l, X = state.iso) {
+export function csaRideInfo(l, X) {
   const C = X.csa, key = META.conns.routes[C.tripsTab[2 * l.ti]];
   if (!l.pts) {   // intermediate stops from this trip's connections
     const seq = [l.from];

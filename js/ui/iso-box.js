@@ -1,12 +1,11 @@
 import { state } from '../state.js';
-import { dayChipLabel, esc, fmt, haversineMeters, nextDays, plural, zaMin } from '../util.js';
+import { dayChipLabel, esc, fmt, haversineMeters, nextDays, plural, todayISO, zaMin } from '../util.js';
 import { DAY_NAMES, DAY_SHORT, TRANSFER_MIN, WALK_MAX } from '../config.js';
 import { CHIP_MINUS, CHIP_PLUS, CHIP_X, ISO_ICON } from '../icons.js';
 import { COARSE } from '../dom.js';
 import { STOP_BY_ID, STOP_INDEX, forEachDep, hasHeadways, loadCellsFor, profileFor } from '../data.js';
 import { WALK } from '../walk.js';
 import { timeModeAvailable } from '../routing/csa.js';
-import { fitIsoView } from '../map/iso.js';
 import { applyIsoT, clearIso, computeIso, isoOrigin, setIsoT } from '../iso.js';
 import { syncURL } from './url.js';
 import { updateSheet } from './sheet.js';
@@ -137,11 +136,7 @@ function bindIsoInputs() {
   // after releasing the slider: recompute immediately (without waiting for a frame) and refresh the stats
   inp.addEventListener('change', () => {
     cancelAnimationFrame(raf);
-    state.isoT = +inp.value;
-    setIsoT(state.isoT);
-    renderIsoBox();
-    fitIsoView();
-    syncURL(false);
+    applyIsoT(+inp.value);
     document.getElementById('iso-t')?.focus();
   });
   const ti = document.getElementById('iso-time');
@@ -218,8 +213,8 @@ async function fillNextDeparture(o) {
     if (pr && (best = firstDep(pr.p, 0, date))) break;
   }
   if (!best) { el.innerHTML = '<b>Stąd w najbliższym tygodniu nic nie odjeżdża.</b>'; return; }
-  const i = days.indexOf(best.date) + 1;   // days from the selected date
-  const dayLabel = i === 1 ? 'jutro' : dayChipLabel(best.date, i);
+  const i = Math.round((new Date(best.date + 'T12:00') - new Date(todayISO() + 'T12:00')) / 864e5);   // days from today
+  const dayLabel = i <= 1 ? dayChipLabel(best.date, i).toLowerCase() : dayChipLabel(best.date, i);
   const at = Math.max(0, Math.round(best.m - best.tw - 2));
   el.innerHTML = `<b>Tego dnia stąd już nic nie odjeżdża.</b> Najbliższy odjazd: ${dayLabel}, <b>${esc(best.key.split('|')[0])} o ${fmt(best.m)}</b>`
     + ` z ${esc(best.name)} → ${esc(best.h)}. <button type="button" class="link-btn" data-iso-goto="${best.date},${at}">Pokaż ${dayLabel} od ${fmt(at)}</button>`;

@@ -2,6 +2,7 @@
 export const plural = (n, one, few, many) => n === 1 ? one : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? few : many;
 export const przystanki = n => plural(n, 'przystanek', 'przystanki', 'przystanków');
 export const linii = n => plural(n, 'linia', 'linie', 'linii');
+export const przesiadki = n => `${n} ${plural(n, 'przesiadka', 'przesiadki', 'przesiadek')}`;
 export const dmy = iso => { const [y, m, d] = iso.split('-'); return `${+d}.${m}.${y}`; };
 export const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 export const fmt = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;

@@ -1,9 +1,9 @@
 import { state } from '../state.js';
-import { fmt } from '../util.js';
+import { fmt, przesiadki } from '../util.js';
 import { ISO_RAMP, WALK_MAX, WALK_MPM, WALK_SPEED } from '../config.js';
 import { ROUTES, STOP_BY_ID, routeColor } from '../data.js';
 import { WALK, cutPoints, edgeIndex, edgePoints } from '../walk.js';
-import { isoGraph } from '../routing/transit.js';
+import { transitGraph } from '../routing/transit.js';
 import { routeTo } from '../routing/street.js';
 import { csaRideInfo } from '../routing/csa.js';
 import { cardPlacement, dropLayer, fitPad, hoverMarker, htmlIcon, map, viewBounds } from './view.js';
@@ -178,9 +178,9 @@ export function drawIso() {
 // Route to a place: rides in line colors, walks dotted
 // ---------------------------------------------------------------------------
 // when hovering a reached stop: draw how to get there
-export function drawIsoPath(id) { drawLegs(isoLegs(id)); }
+export function drawIsoPath(id) { drawLegs(isoLegs(id), null, state.iso); }
 export function clearIsoPath() { isoPathLayer = dropLayer(isoPathLayer); }
-export function drawLegs(legs, tail, C = state.iso) {
+export function drawLegs(legs, tail, C) {
   clearIsoPath();
   const parts = legLayers(legs, tail, C);
   if (parts.length) isoPathLayer = L.layerGroup(parts).addTo(map);
@@ -195,7 +195,7 @@ function rideLayers(pts, color) {
 }
 const stopLL = id => { const x = STOP_BY_ID.get(id); return x && [x.lat, x.lon]; };
 // route layers: rides in line colors, dotted walking legs on top
-export function legLayers(legs, tail, C = state.iso) {
+export function legLayers(legs, tail, C) {
   const parts = [];
   if (tail) legs = legs.concat([{ walk: true, pts: tail }]);
   const walks = [];
@@ -210,7 +210,7 @@ export function legLayers(legs, tail, C = state.iso) {
       const { key } = csaRideInfo(l, C);
       parts.push(...rideLayers(l.pts, routeColor(ROUTES[key] || { type: key.split('|')[1] })));
     } else {               // typical day ride: trip segment from the graph
-      const tr = isoGraph.trips[l.ti];
+      const tr = transitGraph().trips[l.ti];
       parts.push(...rideLayers(tr.s.slice(l.from, l.to + 1).map(([sid]) => stopLL(sid)), routeColor(ROUTES[tr.key])));
     }
   });
@@ -232,16 +232,16 @@ function pointCardHtml(ll, r) {
   const { t, rides } = r, csa = state.iso.csa;
   const head = `<b>${Math.max(1, Math.round(t))} min</b> stąd`
     + (csa ? ` · na miejscu ${fmt(Math.round(csa.t0 + t))}` : '')
-    + (rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : '');
+    + (rides > 1 ? ` · ${przesiadki(rides - 1)}` : '');
   return `<div class="sh${cardPlacement(ll)}" style="--sh-c:#184f95"><div class="sh-dot" style="width:10px;height:10px"></div>
     <div class="sh-tip sh-tip-pt wide"><div class="sh-iso" style="margin:0;padding:0;border:0">${head}</div>
-    <div class="sh-legs">${legsText(r.legs)}</div></div></div>`;
+    <div class="sh-legs">${legsText(r.legs, state.iso)}</div></div></div>`;
 }
 function pointHover(ll) {
   if (!state.iso || !state.iso.walk || stopHoverOn || nearTargetPop(ll)) return hidePointHover();
   const r = routeTo(state.iso, ll.lat, ll.lng, HOVER_SNAP_M);
   if (!r || !(r.t <= state.iso.T)) return hidePointHover();
-  drawLegs(r.legs);
+  drawLegs(r.legs, null, state.iso);
   const icon = htmlIcon(pointCardHtml(ll, r));
   if (pointHoverLayer) pointHoverLayer.setLatLng(ll).setIcon(icon);
   else pointHoverLayer = hoverMarker(ll, icon).addTo(map);
