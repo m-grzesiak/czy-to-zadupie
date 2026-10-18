@@ -4,7 +4,7 @@ Kontekst dla asystenta pracującego nad tym projektem. Instrukcja aktualizacji d
 
 ## Co to jest
 
-Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy), jeden plik `index.html` z Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` po pushu na `main` i codziennie o 2:30 UTC pobiera GTFS, uruchamia `update_data.sh` i publikuje stronę z danymi; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny. Wygenerowane dane (`stops_data.json`, `walk.bin`, `transfers.bin`, `deps/`, `conns/`) nie są w git — powstają w CI. Sieć piesza jest w repo jako `walk_osm.tar.xz` (~8 MB, pakuje go `download_walk.sh`), więc CI nie zależy od Overpass; ostatnie dobre ZIP-y GTFS są w pamięci podręcznej Actions.
+Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy): `index.html` + `style.css` + moduły ES w `js/` (bez bundlera), Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` po pushu na `main` i codziennie o 2:30 UTC pobiera GTFS, uruchamia `update_data.sh` i publikuje stronę z danymi; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny. Wygenerowane dane (`stops_data.json`, `walk.bin`, `transfers.bin`, `deps/`, `conns/`) nie są w git — powstają w CI. Sieć piesza jest w repo jako `walk_osm.tar.xz` (~8 MB, pakuje go `download_walk.sh`), więc CI nie zależy od Overpass; ostatnie dobre ZIP-y GTFS są w pamięci podręcznej Actions.
 
 Funkcje:
 - **Klik w punkt:** linie w promieniu (suwak 200–2000 m, domyślnie 500 m) i lista przystanków w okręgu, posortowana po dojściu pieszym. Promień dotyczy tylko listy linii — zasięg i dojazdy liczą chodzenie po ulicach bez limitu okręgu. Gdy w okręgu nie ma przystanku: 3 najbliższe (`nearestOutside`) i przycisk powiększenia promienia.
@@ -45,7 +45,10 @@ Funkcje:
 
 | Plik | Rola |
 |---|---|
-| `index.html` | cała strona: HTML + CSS + JS w jednym pliku (dawniej `krakow-transit-map.html`) |
+| `index.html` | sam HTML; ładuje `style.css` i `js/main.js` (`type="module"`) |
+| `style.css` | cały CSS |
+| `js/` | kod strony, natywne moduły ES (bez bundlera); mapa modułów niżej |
+| `tests/` | testy Playwright (`npm test`), wzorce stanu w `tests/golden/` |
 | `update_data.sh` | pełna aktualizacja: pobranie 5 plików GTFS (nieudany → poprzednia kopia, lista w `stale_feeds.txt`; CI publikuje i potem oznacza przebieg jako nieudany), `generate_stops_data.py`, `build_walk_graph.py`, kontrola wyniku (używane w CI i lokalnie) |
 | `.github/workflows/pages.yml` | codzienna aktualizacja danych i publikacja na GitHub Pages |
 | `.gitlab-ci.yml` | publikacja na GitLab Pages (zapas) |
@@ -105,6 +108,17 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
 
 ## Architektura JS (najważniejsze funkcje)
 
+- **Moduły (`js/`):**
+  - `state.js` — wspólny stan widoku (`state.stopMode`, `state.iso`, `state.target`, `state.isoDay`…); zmienne prywatne modułu zostają w nim jako `let`,
+  - `util.js` (formatowanie, `plural`, daty, `loadList` / `saveJSON`), `config.js` (stałe, kolory, cele), `icons.js`, `dom.js` (elementy strony, `isMobile`, `setLoading`),
+  - `data.js` (`STOPS`, `ROUTES`, `META`, `deps/`: `loadCellsFor`, `forEachDep`, `profileFor`), `walk.js` (`walk.bin`),
+  - `routing/` — algorytmy bez DOM: `transit.js` (graf kursów, czekanie), `street.js` (`walkDijkstra`, etapy, `routeTo`), `csa.js` (tryb „wyjazd o godzinie”), `heap.js`,
+  - `iso.js` — zasięg (liczenie, etapy, opis),
+  - `map/` — warstwy Leaflet: `view.js` (mapa, kontrolki, widoczna część), `stops.js` (kropki, hover), `route.js` (trasa linii), `iso.js` (kafelki zasięgu, ścieżki),
+  - `ui/` — panel i obsługa: `panel.js` (punkt / przystanek), `line.js`, `board.js`, `place.js` (werdykt, dojazdy), `iso-box.js` (karta i chip zasięgu), `target.js`, `search.js`, `sheet.js` (telefon), `history.js`, `url.js`, `events.js` (delegacja zdarzeń z `#results`),
+  - `main.js` — start (`window.__mapa = { map }` dla konsoli i testów).
+- Moduły mają cykliczne importy — to działa, bo na najwyższym poziomie tylko definiują rzeczy; nic nie woła funkcji innego modułu w trakcie wczytywania (poza `main.js`, który jest ostatni).
+
 - **Stan:** `STOPS`, `ROUTES`, `META`, `stopMode` (widok przystanku) / `radiusCircle` (widok punktu), `selectedRouteKey`, `iso`, `reach` (typowy dzień z miejsca do `REACH_T` = 90 min), `placeStats`, `target`, `pickingTarget`, `isoDay`.
 - **Widoki:** `selectPoint` → `recompute` → `renderPanel` → `refreshPlace`; `selectStop` → `renderStopPanel` + `renderBoard` + `refreshPlace` (+ `drawPoleLabels`, `hotPole` przy hoverze wiersza); pusty widok `showEmpty`.
 - **Adres:** każda zmiana widoku woła `syncURL(push)` (odroczone `setTimeout 0`, kilka wywołań w jednym kroku = jeden wpis historii). `stateHash` buduje hash, `applyState` odtwarza widok przy starcie i na `popstate`; w trakcie `applyingState` nic nie trafia do historii.
@@ -153,7 +167,9 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
 
 ## Jak testować
 
-Środowisko asystenta zwykle nie ma dostępu do cdnjs ani tile.openstreetmap.org. Testy uruchamiaj przez headless Chromium (Playwright):
+Zestaw w `tests/` (`cd tests && npm install && npm test`, ok. 1–3 min): Playwright z zainstalowanym Google Chrome (`channel: 'chrome'`), Leaflet z `node_modules`, kafelki OSM = 204, Photon z `tests/fixtures/`, zegar zamrożony na wtorek 20.10.2026 8:00. Każdy scenariusz porównuje stan strony (tekst panelu, adres, klasy, karty na mapie, widok) ze wzorcem w `tests/golden/`. Po celowej zmianie wyglądu lub tekstów: `npm run golden` i przejrzyj różnice w git. Dane są lokalne i zmieniają się z dniem generowania — po aktualizacji danych wzorce trzeba nagrać od nowa. `MAPA_PORT` / `MAPA_DIR` zmieniają port i katalog strony.
+
+Ręcznie (headless Chromium):
 - podstaw Leaflet z `npm pack leaflet@1.9.4` przez `page.route`,
 - odpowiadaj 204 na kafelki OSM,
 - serwuj folder przez `python3 -m http.server`.
@@ -179,6 +195,6 @@ Sprawdzaj:
   - pasma zasięgu to jednobarwna rampa niebieska `ISO_RAMP` (zwalidowana jako porządkowa).
   - kropki przystanków: biały środek + obwódka `STOP_TRAM` / `STOP_BUS` (przystanek z tramwajem = tramwajowa), legenda w lewym dolnym rogu; zaznaczone pomarańczowe, bez dojścia szare przerywane, przy zasięgu przygaszone,
   - podkład OSM w oryginalnych kolorach (przygaszanie filtrem CSS było testowane i odrzucone).
-- **Na serwer idą tylko:** HTML, `stops_data.json`, `deps/`, `conns/`, `walk.bin`, `transfers.bin` — generowane w CI, nie commitowane (`.gitignore`). `walk_osm/` zostaje lokalnie, w repo jest jako `walk_osm.tar.xz` do przebudowy `walk.bin`. ZIP-y GTFS są jednorazowe.
+- **Na serwer idą tylko:** `index.html`, `style.css`, `js/`, `stops_data.json`, `deps/`, `conns/`, `walk.bin`, `transfers.bin` — generowane w CI, nie commitowane (`.gitignore`). `walk_osm/` zostaje lokalnie, w repo jest jako `walk_osm.tar.xz` do przebudowy `walk.bin`. ZIP-y GTFS są jednorazowe.
 - **Nowy feed albo zmiana kroków generowania:** zmieniaj `update_data.sh` (z niego korzysta CI), a progi kontroli na jego końcu dopasuj do danych.
 - **Interfejs mówi „przystanek”, nie „słupek”.** Słupek (`stop_id`) to termin tylko techniczny.

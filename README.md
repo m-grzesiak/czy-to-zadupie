@@ -18,7 +18,10 @@ Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą ob
 
 | Plik | Co to jest | Na stronę? |
 |---|---|---|
-| `index.html` | cała strona | tak |
+| `index.html` | strona: sam HTML | tak |
+| `style.css` | wygląd strony | tak |
+| `js/` | kod strony jako moduły ES (bez budowania), start w `js/main.js` | tak |
+| `tests/` | testy strony w przeglądarce (Playwright), `npm test` | nie |
 | `.github/workflows/pages.yml` | codzienna aktualizacja rozkładu i publikacja na GitHub Pages | nie |
 | `.gitlab-ci.yml` | to samo dla GitLab Pages, gdyby repo było tam | nie |
 | `update_data.sh` | cała aktualizacja danych jednym poleceniem: kroki 1–4 i kontrola wyniku | nie |
@@ -133,7 +136,7 @@ Strony nie da się otworzyć podwójnym kliknięciem (`file://`). Przeglądarka 
 
 ### 6. Opublikuj
 
-Strona: https://m-grzesiak.github.io/czy-to-zadupie/ (repo https://github.com/m-grzesiak/czy-to-zadupie, GitHub Pages). Na serwer trafiają tylko: `index.html`, `stops_data.json`, `deps/`, `conns/`, `walk.bin` i `transfers.bin`. Pliki GTFS, `walk_osm/` i skrypty zostają w repozytorium albo lokalnie, ale nie są publikowane.
+Strona: https://m-grzesiak.github.io/czy-to-zadupie/ (repo https://github.com/m-grzesiak/czy-to-zadupie, GitHub Pages). Na serwer trafiają tylko: `index.html`, `style.css`, `js/`, `stops_data.json`, `deps/`, `conns/`, `walk.bin` i `transfers.bin`. Pliki GTFS, `walk_osm/` i skrypty zostają w repozytorium albo lokalnie, ale nie są publikowane.
 
 1. **Dane generuje CI, nie commitujesz ich.** `stops_data.json`, `walk.bin`, `transfers.bin`, `deps/` i `conns/` są w `.gitignore`. Commitujesz tylko stronę i skrypty.
 2. Workflow `.github/workflows/pages.yml` uruchamia się po każdym pushu na `main` i codziennie o 2:30 UTC (3:30 / 4:30 w Krakowie). Pobiera świeże GTFS, uruchamia `update_data.sh` (generowanie, sieć piesza, kontrola) i publikuje stronę z danymi. Postęp w zakładce Actions.
