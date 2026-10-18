@@ -52,8 +52,8 @@ jobs:
       - name: Copy site and data to public/
         run: |
           mkdir -p public
-          cp index.html stops_data.json walk.bin transfers.bin public/
-          cp -r deps conns public/
+          cp index.html style.css stops_data.json walk.bin transfers.bin public/
+          cp -r js deps conns public/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -14,8 +14,8 @@ pages:
     - command -v unzip >/dev/null || (apt-get update -qq && apt-get install -y -qq unzip)
     - bash update_data.sh
     - mkdir -p public
-    - cp index.html stops_data.json walk.bin transfers.bin public/
-    - cp -r deps conns public/
+    - cp index.html style.css stops_data.json walk.bin transfers.bin public/
+    - cp -r js deps conns public/
   artifacts:
     paths:
       - public
