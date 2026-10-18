@@ -2,9 +2,9 @@ import { state } from '../state.js';
 import { esc, haversineMeters } from '../util.js';
 import { STOP_BY_ID } from '../data.js';
 import { panToVisible, viewBounds } from '../map/view.js';
-import { selectRoute } from './line.js';
+import { closeRoute } from './line.js';
 import { selectPoint, selectStop } from './panel.js';
-import { nearestStopName } from './target.js';
+import { placeLabel } from './target.js';
 
 // ---------------------------------------------------------------------------
 // Poprzednie miejsca startu: „← Wróć do: …” nad tytułem panelu. Przy porównywaniu dwóch okolic
@@ -16,11 +16,11 @@ function currentPlace() {
   if (state.radiusCircle) {
     const c = state.radiusCircle.getLatLng();
     if (state.pointLabel) return { lat: c.lat, lon: c.lng, name: state.pointLabel, label: state.pointLabel };
-    const n = nearestStopName(c.lat, c.lng);
-    return { lat: c.lat, lon: c.lng, name: n ? `okolice: ${n}` : 'poprzednie miejsce' };
+    return { lat: c.lat, lon: c.lng, name: placeLabel(c.lat, c.lng, 'poprzednie miejsce') };
   }
   return null;
 }
+// to samo miejsce: ten sam przystanek (albo przystanek o tej samej nazwie) lub punkt do 15 m
 const samePlaceRec = (a, b) => !!(a && b) && (a.stopId && b.stopId ? a.stopId === b.stopId || a.name === b.name
   : a.stopId || b.stopId ? false : haversineMeters(a.lat, a.lon, b.lat, b.lon) < 15);
 // next = miejsce, które zaraz zostanie wybrane (to samo miejsce nie trafia do historii)
@@ -48,7 +48,7 @@ function backToPlace() {
   const st = p.stopId && STOP_BY_ID.get(p.stopId);
   state.restoringPlace = true;
   try {
-    if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
+    closeRoute();
     if (st) selectStop(st); else selectPoint(L.latLng(p.lat, p.lon), { label: p.label });
   } finally { state.restoringPlace = false; }
   renderBackPlace();
