@@ -4,7 +4,7 @@ Kontekst dla asystenta pracującego nad tym projektem. Instrukcja aktualizacji d
 
 ## Co to jest
 
-Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy), jeden plik `index.html` z Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` kopiuje stronę i dane do `public/`; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny.
+Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy), jeden plik `index.html` z Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` po pushu na `main` i codziennie o 2:30 UTC pobiera GTFS, uruchamia `update_data.sh` i publikuje stronę z danymi; `.gitlab-ci.yml` to zapas dla GitLab Pages), bez własnej domeny. Wygenerowane dane (`stops_data.json`, `walk.bin`, `transfers.bin`, `deps/`, `conns/`) nie są w git — powstają w CI; `walk_osm/` jest w pamięci podręcznej Actions.
 
 Funkcje:
 - **Klik w punkt:** linie w promieniu (suwak 200–2000 m, domyślnie 500 m) i lista przystanków w okręgu, posortowana po dojściu pieszym. Promień dotyczy tylko listy linii — zasięg i dojazdy liczą chodzenie po ulicach bez limitu okręgu. Gdy w okręgu nie ma przystanku: 3 najbliższe (`nearestOutside`) i przycisk powiększenia promienia.
@@ -45,7 +45,8 @@ Funkcje:
 | Plik | Rola |
 |---|---|
 | `index.html` | cała strona: HTML + CSS + JS w jednym pliku (dawniej `krakow-transit-map.html`) |
-| `.github/workflows/pages.yml` | publikacja na GitHub Pages |
+| `update_data.sh` | pełna aktualizacja: pobranie 5 plików GTFS (nieudany → poprzednia kopia, lista w `stale_feeds.txt`; CI publikuje i potem oznacza przebieg jako nieudany), `generate_stops_data.py`, `build_walk_graph.py`, kontrola wyniku (używane w CI i lokalnie) |
+| `.github/workflows/pages.yml` | codzienna aktualizacja danych i publikacja na GitHub Pages |
 | `.gitlab-ci.yml` | publikacja na GitLab Pages (zapas) |
 | `stops_data.json` | `{meta, stops, routes}`, wczytywany przy starcie |
 | `deps/<y>_<x>.json` | odjazdy w komórkach siatki 0,02° × 0,03°, pobierane na żądanie |
@@ -72,7 +73,7 @@ Kolejność zawsze: `generate_stops_data.py`, potem `build_walk_graph.py`. Pierw
   - autobusy mają `route_color=FFFFFF`, więc białe i czarne kolory są ignorowane,
   - `route_long_name` = numer linii, więc nazwa trasy jest składana z `trip_headsign`,
   - numeryczne `stop_id` w A i M mogą kolidować: przy tym samym ID dalej niż 30 m od siebie dostają prefiks feedu.
-- **GTFS Kolei Małopolskich (autobusy MLD, linie A1…A74)** z https://gtfs.kolejemalopolskie.com.pl/ — plik „mld-gtfs.zip” z sekcji „Rozkłady Handlowe” (pobiera się przez `?download=…`, zapisuje jako `ald-gtfs.zip`; z sesji asystenta domena jest zablokowana, plik pobiera Michał). Rozpoznawany po nazwie (`feed_mode_hint`, `feed_operator` → `op` = „Koleje Małopolskie”). Specyfika:
+- **GTFS Kolei Małopolskich (autobusy MLD, linie A1…A74)** z https://gtfs.kolejemalopolskie.com.pl/ — plik „mld-gtfs.zip” z sekcji „Rozkłady Handlowe” (pobiera się przez `?download=…`, zapisuje jako `ald-gtfs.zip`; pobiera `update_data.sh`). Rozpoznawany po nazwie (`feed_mode_hint`, `feed_operator` → `op` = „Koleje Małopolskie”). Specyfika:
   - brak `shapes.txt` → trasy to odcinki między przystankami, brak `direction_id` → nazwa linii z dwóch najczęstszych kierunków,
   - kalendarz w `calendar.txt` (dni tygodnia), `stop_code` to numery KMŁ (np. „900”), nie słupki — `c` tylko z końcówki nazwy („Kraków Cło 01” → „01”),
   - większość linii wyjeżdża poza obszar mapy: przystanki poza `--bbox` (domyślnie obszar sieci pieszej) są pomijane, trasy przycięte (`_clip_line`), czasy w `trips[].s` liczone od pierwszego przystanku w obszarze, połączenia CSA tylko między przystankami w obszarze,
@@ -169,12 +170,13 @@ Sprawdzaj:
 
 ## Konwencje
 
-- **Komentarze w kodzie i komunikaty skryptów po polsku.** Nazwy zmiennych mogą być po angielsku.
+- **Komentarze w kodzie i komunikaty skryptów po polsku.** Nazwy zmiennych mogą być po angielsku. Wyjątek: CI (`update_data.sh`, `.github/workflows/`, `.gitlab-ci.yml`) — komentarze, nazwy kroków i komunikaty po angielsku.
 - **Po zmianie formatu danych** zaktualizuj `README.md` (kroki i opis plików) i ten plik.
 - **Kolory:**
   - tramwaj `--tram #a8322d`, autobus `--bus #2a5f74`, akcent `--accent #c98a2c`,
   - pasma zasięgu to jednobarwna rampa niebieska `ISO_RAMP` (zwalidowana jako porządkowa).
   - kropki przystanków: biały środek + obwódka `STOP_TRAM` / `STOP_BUS` (przystanek z tramwajem = tramwajowa), legenda w lewym dolnym rogu; zaznaczone pomarańczowe, bez dojścia szare przerywane, przy zasięgu przygaszone,
   - podkład OSM w oryginalnych kolorach (przygaszanie filtrem CSS było testowane i odrzucone).
-- **Na serwer idą tylko:** HTML, `stops_data.json`, `deps/`, `conns/`, `walk.bin`, `transfers.bin`. `walk_osm/` zostaje lokalnie do przebudowy `walk.bin`. ZIP-y GTFS są jednorazowe.
+- **Na serwer idą tylko:** HTML, `stops_data.json`, `deps/`, `conns/`, `walk.bin`, `transfers.bin` — generowane w CI, nie commitowane (`.gitignore`). `walk_osm/` zostaje lokalnie / w cache Actions do przebudowy `walk.bin`. ZIP-y GTFS są jednorazowe.
+- **Nowy feed albo zmiana kroków generowania:** zmieniaj `update_data.sh` (z niego korzysta CI), a progi kontroli na jego końcu dopasuj do danych.
 - **Interfejs mówi „przystanek”, nie „słupek”.** Słupek (`stop_id`) to termin tylko techniczny.

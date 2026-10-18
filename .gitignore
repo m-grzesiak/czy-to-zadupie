@@ -3,6 +3,14 @@
 GTFS_KRK_*/
 walk_osm/
 *.osm.pbf
+*.part
+stale_feeds.txt
+# dane generowane przez update_data.sh — w CI powstają od nowa przy każdej publikacji
+stops_data.json
+walk.bin
+transfers.bin
+deps/
+conns/
 # kopie zapasowe strony
 *.backup.html
 *-backup.html
