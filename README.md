@@ -23,7 +23,6 @@ Wszystkie dane są przygotowywane z góry dwoma skryptami w Pythonie i leżą ob
 | `js/` | kod strony jako moduły ES (bez budowania), start w `js/main.js` | tak |
 | `tests/` | testy strony w przeglądarce (Playwright), `npm test` | nie |
 | `.github/workflows/pages.yml` | codzienna aktualizacja rozkładu i publikacja na GitHub Pages | nie |
-| `.gitlab-ci.yml` | to samo dla GitLab Pages, gdyby repo było tam | nie |
 | `update_data.sh` | cała aktualizacja danych jednym poleceniem: kroki 1–4 i kontrola wyniku | nie |
 | `stops_data.json` | przystanki (z numerem słupka z tablicy ZTP), linie, trasy, czasy przejazdu, kalendarz, częstotliwości | tak |
 | `deps/*.json` | rozkład odjazdów w kawałkach siatki ~2 km (strona pobiera tylko potrzebne) | tak |
@@ -145,7 +144,6 @@ Strona: https://m-grzesiak.github.io/czy-to-zadupie/ (repo https://github.com/m-
 5. **Sieć piesza** pochodzi z `walk_osm.tar.xz` w repo, więc CI nie zależy od Overpass. Odświeżasz ją ręcznie raz na kilka miesięcy (krok 3) i commitujesz nowe archiwum.
 6. GitHub wyłącza harmonogram po 60 dniach bez commitów. Workflow sam włącza go z powrotem po każdym codziennym przebiegu, więc nie trzeba nic robić.
 7. Jednorazowo w repo: Settings → Pages → Source: **GitHub Actions**.
-8. Na GitLab Pages to samo robi `.gitlab-ci.yml`; codzienny przebieg ustawiasz w Build → Pipeline schedules, a w Deploy → Pages wyłącz **Use unique domain**, inaczej adres dostanie losowy dopisek.
 
 Strona wczytuje dane ścieżkami względnymi, więc działa też pod podkatalogiem (`/czy-to-zadupie/`).
 
