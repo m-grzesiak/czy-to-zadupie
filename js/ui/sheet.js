@@ -1,18 +1,21 @@
 import { state } from '../state.js';
 import { ICON_BACK, ICON_X } from '../icons.js';
 import { appEl, isMobile, layoutEl, panelEl } from '../dom.js';
-import { fitPad, map, panToVisible, viewBounds } from '../map/view.js';
+import { map, panToVisible, viewBounds } from '../map/view.js';
 import { fitRouteView } from '../map/route.js';
 import { fitIsoView } from '../map/iso.js';
 import { isoOrigin } from '../iso.js';
+import { fitTargetView } from './target.js';
 
 let sheetMode = null;
 let revealTimer = 0;
+// stan arkusza na telefonie: 'peek' (niski) albo 'full' (rozwinięty)
 export function setSheet(st) {
   if (st === 'peek') panelEl.scrollTop = 0;
   state.sheetState = st;
   updateSheet();
 }
+// klasy stanu na #app / #panel / #layout i przycisk #m-back według bieżącego widoku
 export function updateSheet() {
   const empty = !state.stopMode && !state.radiusCircle;
   const lineOpen = !empty && !!state.selectedRouteKey;
@@ -53,19 +56,17 @@ export function sheetPx() {
   const p = panelEl.getBoundingClientRect();
   return Math.max(0, Math.round(a.bottom - p.top));
 }
+// przyciski na górze mapy (telefon) zasłaniają pas tej wysokości
 export const topUi = () => isMobile() ? 64 : 0;
-   // przyciski na górze mapy
+// --sheet-h podnosi legendę, atrybucję i + − nad arkusz
 export function setSheetVar() { layoutEl.style.setProperty('--sheet-h', sheetPx() + 'px'); }
+// po zmianie wysokości arkusza: wybrana linia, zasięg, cel albo miejsce wraca do widocznej części mapy
 function revealFocus() {
   if (!map || !isMobile()) return;
   setSheetVar();
   if (state.selectedRouteKey) { fitRouteView(); return; }
   if (state.iso) { fitIsoView(); return; }
-  if (state.target) {
-    const o = isoOrigin(), b = L.latLngBounds([[state.target.lat, state.target.lon]].concat(o ? [[o.lat, o.lon]] : []));
-    if (!viewBounds(0.05).contains(b)) map.fitBounds(b, { ...fitPad(50), maxZoom: map.getZoom() });
-    return;
-  }
+  if (state.target) { fitTargetView(0.05, 50); return; }
   const o = isoOrigin();
   if (o && !viewBounds(0.12).contains([o.lat, o.lon])) panToVisible(L.latLng(o.lat, o.lon));
 }

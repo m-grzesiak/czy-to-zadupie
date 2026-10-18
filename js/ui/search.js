@@ -1,25 +1,24 @@
-import { state } from '../state.js';
-import { esc, fold, haversineMeters } from '../util.js';
+import { esc, fold, haversineMeters, loadList, saveJSON } from '../util.js';
 import { PHOTON_URL, RECENT_KEY } from '../config.js';
 import { SR_ICON } from '../icons.js';
 import { appEl, isMobile } from '../dom.js';
 import { dataBoundsBase, map, setViewVisible } from '../map/view.js';
-import { selectRoute } from './line.js';
+import { closeRoute } from './line.js';
 import { selectPoint } from './panel.js';
 
 const srEl = document.getElementById('search');
 const srInput = document.getElementById('sr-input');
 const srList = document.getElementById('sr-list');
 const srClear = document.getElementById('sr-clear');
-let srState = { q: '', res: null };
-let srItems = [];
-let srActive = -1;
+const RECENT_MAX = 5;
+let srState = { q: '', res: null };   // wpisane zapytanie i wynik: null, 'loading', 'error' albo lista
+let srItems = [];                     // wiersze listy, które da się wybrać (indeks = data-sr)
+let srActive = -1;                    // wiersz wybrany strzałkami
 let srTimer = 0;
 let srAbort = null;
-let srEnter = false;
-const srCache = new Map();
-   // zapytanie (bez wielkości liter i polskich znaków) → wyniki
-let srRecent = (() => { try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(p => p && p.name && Number.isFinite(p.lat) && Number.isFinite(p.lon)).slice(0, 5) : []; } catch (e) { return []; } })();
+let srEnter = false;                  // Enter w trakcie pisania: wybierz pierwszy wynik, gdy przyjdzie
+const srCache = new Map();            // zapytanie (bez wielkości liter i polskich znaków) → wyniki
+let srRecent = loadList(RECENT_KEY, p => p.name && Number.isFinite(p.lat) && Number.isFinite(p.lon)).slice(0, RECENT_MAX);
 const srTokens = q => fold(q).split(/[^a-z0-9]+/).filter(Boolean);
 // pogrubienie słów, które zaczynają się od wpisanych fragmentów
 function srMark(name, toks) {
@@ -102,6 +101,11 @@ function onSrInput() {
   }
   renderSr();
 }
+// czyści pole (i listę wyników)
+function srReset() {
+  srInput.value = '';
+  onSrInput();
+}
 function renderSr() {
   const { q, res } = srState, toks = srTokens(q);
   let html = '';
@@ -134,18 +138,16 @@ function renderSr() {
 }
 function srRemember(it) {
   srRecent = [{ name: it.name, sub: it.sub || '', lat: it.lat, lon: it.lon, zoom: it.zoom }]
-    .concat(srRecent.filter(p => p.name !== it.name || haversineMeters(p.lat, p.lon, it.lat, it.lon) > 30)).slice(0, 5);
-  try { localStorage.setItem(RECENT_KEY, JSON.stringify(srRecent)); } catch (e) { /* tryb prywatny */ }
+    .concat(srRecent.filter(p => p.name !== it.name || haversineMeters(p.lat, p.lon, it.lat, it.lon) > 30)).slice(0, RECENT_MAX);
+  saveJSON(RECENT_KEY, srRecent);
 }
 function srChoose(it) {
   if (!it || !map) return;
   srRemember(it);
-  srInput.value = '';
-  onSrInput();
-  srClose();
-  srInput.blur();
+  srReset();
+  srDismiss();
   const ll = L.latLng(it.lat, it.lon);
-  if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
+  closeRoute();
   selectPoint(ll, { label: it.name });
   setViewVisible(ll, it.zoom || 16);
 }
@@ -157,6 +159,11 @@ function srClose() {
   appEl.classList.remove('search-open');
   srList.hidden = true;
   srInput.setAttribute('aria-expanded', 'false');
+}
+// zamknięcie listy i zejście z pola
+function srDismiss() {
+  srClose();
+  srInput.blur();
 }
 // lupa na telefonie, „/” na klawiaturze
 function srFocus() {
@@ -182,8 +189,8 @@ srInput.addEventListener('keydown', e => {
     else if (Array.isArray(srState.res)) srChoose(srItems[0]);
   } else if (e.key === 'Escape') {
     e.preventDefault();
-    if (srInput.value) { srInput.value = ''; onSrInput(); }
-    else { srClose(); srInput.blur(); }
+    if (srInput.value) srReset();
+    else srDismiss();
   }
 });
 // klik w wynik nie zabiera fokusu polu (inaczej lista zniknęłaby przed kliknięciem)
@@ -193,8 +200,8 @@ srList.addEventListener('click', e => {
   if (li) srChoose(srItems[+li.dataset.sr]);
 });
 srEl.addEventListener('focusout', e => { if (!isMobile() && !srEl.contains(e.relatedTarget)) srClose(); });
-srClear.addEventListener('click', () => { srInput.value = ''; onSrInput(); srInput.focus(); });
-document.getElementById('sr-close').addEventListener('click', () => { srClose(); srInput.blur(); });
+srClear.addEventListener('click', () => { srReset(); srInput.focus(); });
+document.getElementById('sr-close').addEventListener('click', srDismiss);
 document.getElementById('m-search').addEventListener('click', srFocus);
 document.addEventListener('keydown', e => {
   if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || (e.target.matches && e.target.matches('input, select, textarea'))) return;

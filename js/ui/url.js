@@ -6,7 +6,7 @@ import { ROUTES, STOP_BY_ID } from '../data.js';
 import { map, setViewVisible, viewBounds } from '../map/view.js';
 import { hideStopHover } from '../map/stops.js';
 import { clearIso, computeIso } from '../iso.js';
-import { selectRoute } from './line.js';
+import { closeRoute, selectRoute } from './line.js';
 import { selectPoint, selectStop, showEmpty, syncRseg } from './panel.js';
 import { renderTargetBox } from './target.js';
 
@@ -50,8 +50,9 @@ export async function applyState() {
   try {
     clearIso();
     hideStopHover();
-    if (state.selectedRouteKey) selectRoute(state.selectedRouteKey);
-    state.isoDay = DAY_NAMES[p.get('dzien')] ? p.get('dzien') : 'w';
+    closeRoute();
+    const day = DAY_NAMES[p.get('dzien')] ? p.get('dzien') : null;
+    state.isoDay = day || 'w';
     // cel przed miejscem startu, żeby od razu policzyć do niego trasę
     const cel = (p.get('cel') || '').split(',').map(Number);
     if (cel.length === 2 && cel.every(Number.isFinite)) {
@@ -59,18 +60,23 @@ export async function applyState() {
     } else state.target = null;
     state.targetPopOn = false;   // po „Wstecz” / z linku: cel bez dymka
     // widok: miejsce ma być wyraźnie w środku mapy, nie przy krawędzi
-    const inView = ll => viewBounds(0.2).contains(ll);
+    const reveal = ll => { if (!viewBounds(0.2).contains(ll)) setViewVisible(ll, Math.max(map.getZoom(), 15)); };
     const s = p.get('s') && STOP_BY_ID.get(p.get('s'));
     const pt = (p.get('p') || '').split(',').map(Number);
     if (s) {
       selectStop(s);
-      if (!inView([s.lat, s.lon])) setViewVisible(L.latLng(s.lat, s.lon), Math.max(map.getZoom(), 15));
+      reveal(L.latLng(s.lat, s.lon));
     } else if (pt.length === 2 && pt.every(Number.isFinite)) {
       const r = +p.get('r');
-      if (r >= 200 && r <= 2000) { state.radiusMeters = Math.round(r / 100) * 100; radiusInput.value = state.radiusMeters; radiusVal.textContent = state.radiusMeters + ' m'; syncRseg(); }
+      if (r >= 200 && r <= 2000) {
+        state.radiusMeters = Math.round(r / 100) * 100;
+        radiusInput.value = state.radiusMeters;
+        radiusVal.textContent = state.radiusMeters + ' m';
+        syncRseg();
+      }
       const ll = L.latLng(pt[0], pt[1]);
       selectPoint(ll);
-      if (!inView(ll)) setViewVisible(ll, Math.max(map.getZoom(), 15));
+      reveal(ll);
     } else {
       showEmpty();
     }
@@ -79,12 +85,12 @@ export async function applyState() {
     const T = +p.get('iso');
     if (T && (state.stopMode || state.radiusCircle)) {
       state.isoT = Math.min(60, Math.max(10, Math.round(T / 5) * 5));
-      const t = (p.get('t') || '').match(/^(\d{1,2}):(\d{2})$/);
-      if (p.get('d') && /^\d{4}-\d{2}-\d{2}$/.test(p.get('d')) && t) {
-        state.isoMode = 'time'; state.isoDate = p.get('d'); state.isoTime = +t[1] * 60 + +t[2];
+      const d = p.get('d'), t = (p.get('t') || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && t) {
+        state.isoMode = 'time'; state.isoDate = d; state.isoTime = +t[1] * 60 + +t[2];
       } else {
         state.isoMode = 'typical';
-        if (DAY_NAMES[p.get('dzien')]) state.isoDay = p.get('dzien');
+        if (day) state.isoDay = day;
       }
       await computeIso();
     }
