@@ -4,7 +4,7 @@ Kontekst dla asystenta pracującego nad tym projektem. Instrukcja aktualizacji d
 
 ## Co to jest
 
-Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy): `index.html` + `style.css` + moduły ES w `js/` (bez bundlera), Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` po pushu na `main` i codziennie o 2:30 UTC pobiera GTFS, uruchamia `update_data.sh` i publikuje stronę z danymi), bez własnej domeny. Wygenerowane dane (`stops_data.json`, `walk.bin`, `transfers.bin`, `deps/`, `conns/`) nie są w git — powstają w CI. Sieć piesza jest w repo jako `walk_osm.tar.xz` (~8 MB, pakuje go `download_walk.sh`), więc CI nie zależy od Overpass; ostatnie dobre ZIP-y GTFS są w pamięci podręcznej Actions.
+Statyczna strona dla Krakowa i aglomeracji, z autobusami ZTP / MPK / Mobilis, tramwajami oraz autobusami (MLD) i pociągami Kolei Małopolskich (bez serwera i bazy): `index.html` + `style.css` + moduły ES w `js/` (bez bundlera), Leaflet 1.9.4 z cdnjs i kafelkami tile.openstreetmap.org. Dane przygotowują z góry skrypty w Pythonie. Nazwa strony: „Czy to zadupie?”. Repo https://github.com/m-grzesiak/czy-to-zadupie, hosting na GitHub Pages: https://m-grzesiak.github.io/czy-to-zadupie/ (`.github/workflows/pages.yml` po pushu na `main` i w każdą niedzielę o 2:30 UTC pobiera GTFS, uruchamia `update_data.sh` i publikuje stronę z danymi), bez własnej domeny. Wygenerowane dane (`stops_data.json`, `walk.bin`, `transfers.bin`, `deps/`, `conns/`) nie są w git — powstają w CI. Sieć piesza jest w repo jako `walk_osm.tar.xz` (~8 MB, pakuje go `download_walk.sh`), więc CI nie zależy od Overpass; ostatnie dobre ZIP-y GTFS są w pamięci podręcznej Actions.
 
 Funkcje:
 - **Klik w punkt:** linie w promieniu (suwak 200–2000 m, domyślnie 500 m) i lista przystanków w okręgu, posortowana po dojściu pieszym. Promień dotyczy tylko listy linii — zasięg i dojazdy liczą chodzenie po ulicach bez limitu okręgu. Gdy w okręgu nie ma przystanku: 3 najbliższe (`nearestOutside`) i przycisk powiększenia promienia.
@@ -50,7 +50,7 @@ Funkcje:
 | `js/` | kod strony, natywne moduły ES (bez bundlera); mapa modułów niżej |
 | `tests/` | testy Playwright (`npm test`), wzorce stanu w `tests/golden/` |
 | `update_data.sh` | pełna aktualizacja: pobranie 5 plików GTFS (nieudany → poprzednia kopia, lista w `stale_feeds.txt`; CI publikuje i potem oznacza przebieg jako nieudany), `generate_stops_data.py`, `build_walk_graph.py`, kontrola wyniku (używane w CI i lokalnie) |
-| `.github/workflows/pages.yml` | codzienna aktualizacja danych i publikacja na GitHub Pages |
+| `.github/workflows/pages.yml` | cotygodniowa (niedziela) aktualizacja danych i publikacja na GitHub Pages |
 | `stops_data.json` | `{meta, stops, routes}`, wczytywany przy starcie |
 | `deps/<y>_<x>.json` | odjazdy w komórkach siatki 0,02° × 0,03°, pobierane na żądanie |
 | `walk.bin` | binarny graf pieszy, pobierany przy pierwszym kliknięciu punktu lub użyciu zasięgu |

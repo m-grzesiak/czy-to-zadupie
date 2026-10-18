@@ -1,4 +1,4 @@
-# GitHub Pages: every day (and on every push to main) downloads fresh GTFS timetables, generates
+# GitHub Pages: every Sunday (and on every push to main) downloads fresh GTFS timetables, generates
 # the data with update_data.sh and publishes the site together with the data. Generated data is not in the repo.
 # The OSM walking network comes from walk_osm.tar.xz in the repo (refreshed by hand, see README).
 # The last good GTFS ZIPs are cached too: if one feed fails to download, the previous copy is used,
@@ -10,7 +10,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "30 2 * * *"   # UTC = 3:30 (winter) / 4:30 (summer) in Kraków
+    - cron: "30 2 * * 0"   # Sundays, UTC = 3:30 (winter) / 4:30 (summer) in Kraków
   workflow_dispatch:
 
 permissions:
@@ -62,7 +62,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
       # GitHub disables scheduled workflows after 60 days without commits; re-enabling resets the timer
-      - name: Keep the daily schedule alive
+      - name: Keep the weekly schedule alive
         if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
