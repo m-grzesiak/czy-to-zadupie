@@ -6,17 +6,37 @@ import { WALK, cutPoints, edgeIndex, edgePoints } from '../walk.js';
 import { isoGraph } from '../routing/transit.js';
 import { routeTo } from '../routing/street.js';
 import { csaRideInfo } from '../routing/csa.js';
-import { fitPad, map, viewBounds } from './view.js';
+import { cardPlacement, dropLayer, fitPad, hoverMarker, htmlIcon, map, viewBounds } from './view.js';
+import { routeLine } from './route.js';
 import { stopHoverOn } from './stops.js';
 import { isoLegs, legsText } from '../iso.js';
 import { targetPop } from '../ui/target.js';
 
+const HOVER_SNAP_M = 150;    // hover w dowolnym miejscu: najdalej tyle od osiągniętej ulicy
+const TARGET_POP_PX = 90;    // bez karty hovera tak blisko otwartego dymka celu
+// przejście piesze: biała obwódka + kropki
+const WALK_STYLES = [
+  { color: '#fff', weight: 7, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false },
+  { color: '#1c1c1a', weight: 3.5, dashArray: '0.1 7', lineCap: 'round', interactive: false },
+];
+
 export let isoLayer = null;
 let isoRenderer = null;
 let isoPathLayer = null;
-// Web Mercator -> piksele świata przy danym zoomie
+
+// ---------------------------------------------------------------------------
+// Obszar zasięgu wzdłuż ulic, rysowany kafelkami (GridLayer)
+// ---------------------------------------------------------------------------
+// Web Mercator <-> piksele świata o rozmiarze s (przy zoomie z: s = 256 · 2^z)
 const mercX = (lon, s) => (lon + 180) / 360 * s;
 const mercY = (lat, s) => { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * s; };
+const mercLon = (x, s) => x / s * 360 - 180;
+const mercLat = (y, s) => 90 - 360 * Math.atan(Math.exp((y / s * 2 - 1) * Math.PI)) / Math.PI;
+// grubość pociągnięcia: ok. 110 m w terenie, 4–34 px
+function streetPx(lat, z) {
+  const mpp = 156543.03 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
+  return Math.max(4, Math.min(34, 110 / mpp));
+}
 // rysuje zasięg na jednym kafelku: tylko ulice z tego fragmentu, jedno pociągnięcie na pasmo
 function drawIsoTile(canvas, coords, size) {
   if (!state.iso || !state.iso.walk) return;
@@ -26,13 +46,10 @@ function drawIsoTile(canvas, coords, size) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
   const z = coords.z, S = 256 * Math.pow(2, z), ox = coords.x * size, oy = coords.y * size;
-  const latC = 90 - 360 * Math.atan(Math.exp(((oy + size / 2) / S * 2 - 1) * Math.PI)) / Math.PI;
-  const mpp = 156543.03 * Math.cos(latC * Math.PI / 180) / Math.pow(2, z);
-  const wpx = Math.max(4, Math.min(34, 110 / mpp)), pad = wpx;
+  const wpx = streetPx(mercLat(oy + size / 2, S), z), pad = wpx;
   // zasięg kafelka w stopniach (+ margines na grubość linii)
-  const lon0 = (ox - pad) / S * 360 - 180, lon1 = (ox + size + pad) / S * 360 - 180;
-  const toLat = y => 90 - 360 * Math.atan(Math.exp((y / S * 2 - 1) * Math.PI)) / Math.PI;
-  const lat1 = toLat(oy - pad), lat0 = toLat(oy + size + pad);
+  const lon0 = mercLon(ox - pad, S), lon1 = mercLon(ox + size + pad, S);
+  const lat1 = mercLat(oy - pad, S), lat0 = mercLat(oy + size + pad, S);
   const idx = edgeIndex(), C = idx.C, gen = ++idx.gen;
   const paths = bands.map(() => new Path2D());
   const P = (lat, lon) => [mercX(lon, S) - ox, mercY(lat, S) - oy];
@@ -54,6 +71,7 @@ function drawIsoTile(canvas, coords, size) {
         let full = null;
         for (let bi = 0; bi < bands.length; bi++) {
           const hi = bands[bi].hi;
+          // ile metrów ulicy da się przejść od każdego końca w czasie pasma
           const ra = ta < hi ? (hi - ta) * WALK_SPEED : 0, rz = tz < hi ? (hi - tz) * WALK_SPEED : 0;
           if (ra <= 1 && rz <= 1) continue;
           // cała ulica w tym paśmie: dalsze pasma i tak zasłoni (bliższe malowane na wierzchu)
@@ -70,14 +88,10 @@ function drawIsoTile(canvas, coords, size) {
 const IsoTiles = L.GridLayer.extend({
   createTile(coords) {
     const tile = document.createElement('canvas');
-    const size = this.getTileSize().x;
-    drawIsoTile(tile, coords, size);
+    drawIsoTile(tile, coords, this.getTileSize().x);
     return tile;
   },
 });
-function drawIsoWalk() {
-  isoLayer = new IsoTiles({ pane: 'iso', updateWhenZooming: false, keepBuffer: 4, tileSize: 256 }).addTo(map);
-}
 export function isoBands(T) {
   const w = [5, 10, 15, 20].find(x => Math.ceil(T / x) <= ISO_RAMP.length) || 20;
   const n = Math.ceil(T / w);
@@ -88,16 +102,20 @@ export function isoBands(T) {
   }
   return bands;
 }
-// Gdy obszar zasięgu wychodzi poza widok — oddal/przesuń mapę (nigdy nie przybliżaj).
+
+// ---------------------------------------------------------------------------
+// Widok zasięgu
+// ---------------------------------------------------------------------------
 // Prostokąt obszaru zasięgu: węzły ulic osiągalne w T (bez sieci pieszej — przystanki) i start.
 function isoBounds() {
-  let s = state.iso.o.lat, n = state.iso.o.lat, w = state.iso.o.lon, e = state.iso.o.lon;
+  const { o, T } = state.iso;
+  let s = o.lat, n = o.lat, w = o.lon, e = o.lon;
   const add = (la, lo) => { if (la < s) s = la; if (la > n) n = la; if (lo < w) w = lo; if (lo > e) e = lo; };
   if (state.iso.walk && WALK && state.iso.res && state.iso.res.time) {
-    const t = state.iso.res.time, nd = WALK.nodes, T = state.iso.T;
+    const t = state.iso.res.time, nd = WALK.nodes;
     for (let i = 0; i < WALK.N; i++) if (t[i] <= T) add(nd[2 * i] / 1e6, nd[2 * i + 1] / 1e6);
   } else {
-    state.iso.labels.forEach((l, id) => { if (l.t <= state.iso.T) { const st = STOP_BY_ID.get(id); add(st.lat, st.lon); } });
+    state.iso.labels.forEach((l, id) => { if (l.t <= T) { const st = STOP_BY_ID.get(id); add(st.lat, st.lon); } });
   }
   return L.latLngBounds([s, w], [n, e]);
 }
@@ -114,9 +132,11 @@ export function fitIsoView(onlyOut = false) {
   map.fitBounds(b, { ...fitPad(6), maxZoom: onlyOut ? map.getZoom() : 16 });
   map.options.zoomSnap = snap;
 }
-function removeIsoLayer() {
-  if (isoLayer) { map.removeLayer(isoLayer); isoLayer = null; }
-}
+
+// ---------------------------------------------------------------------------
+// Warstwy obszaru
+// ---------------------------------------------------------------------------
+function removeIsoLayer() { isoLayer = dropLayer(isoLayer); }
 export function removeIsoLayers() {
   removeIsoLayer();
   clearIsoPath();
@@ -130,95 +150,103 @@ export function ensureIsoPane() {
 export function drawIso() {
   removeIsoLayer();
   if (!state.iso) return;
-  if (state.iso.walk) { drawIsoWalk(); return; }
+  if (state.iso.walk) {
+    isoLayer = new IsoTiles({ pane: 'iso', updateWhenZooming: false, keepBuffer: 4, tileSize: 256 }).addTo(map);
+    return;
+  }
+  // bez sieci pieszej: kółka wokół startu i osiągniętych przystanków (linia prosta)
+  const { o } = state.iso;
+  const disc = (lat, lon, radius, color) => L.circle([lat, lon], {
+    renderer: isoRenderer, radius, stroke: false, fillColor: color, fillOpacity: 1, interactive: false,
+  });
   const circles = [];
   // od najdalszego pasma do najbliższego: bliższe malowane na wierzchu
   [...state.iso.bands].reverse().forEach(b => {
-    if (state.iso.o.point) {
-      circles.push(L.circle([state.iso.o.lat, state.iso.o.lon], {
-        renderer: isoRenderer, radius: Math.min(b.hi * WALK_MPM, state.iso.o.walkMax), stroke: false,
-        fillColor: b.color, fillOpacity: 1, interactive: false,
-      }));
-    }
+    if (o.point) circles.push(disc(o.lat, o.lon, Math.min(b.hi * WALK_MPM, o.walkMax), b.color));
     state.iso.labels.forEach((lab, id) => {
       if (lab.t >= b.hi) return;   // pasma kończą się na iso.T
       const r = Math.min((b.hi - lab.t) * WALK_MPM, WALK_MAX);
       if (r < 25) return;
       const st = STOP_BY_ID.get(id);
-      circles.push(L.circle([st.lat, st.lon], {
-        renderer: isoRenderer, radius: r, stroke: false, fillColor: b.color, fillOpacity: 1, interactive: false,
-      }));
+      circles.push(disc(st.lat, st.lon, r, b.color));
     });
   });
   isoLayer = L.layerGroup(circles).addTo(map);
 }
+
+// ---------------------------------------------------------------------------
+// Trasa dojazdu: przejazdy w kolorach linii, przejścia kropkowane
+// ---------------------------------------------------------------------------
 // po najechaniu na osiągnięty przystanek: narysuj, jak tam dojechać
 export function drawIsoPath(id) { drawLegs(isoLegs(id)); }
-const walkStyle = [
-  { color: '#fff', weight: 7, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false },
-  { color: '#1c1c1a', weight: 3.5, dashArray: '0.1 7', lineCap: 'round', interactive: false },
-];
-export function clearIsoPath() {
-  if (isoPathLayer) { map.removeLayer(isoPathLayer); isoPathLayer = null; }
-}
+export function clearIsoPath() { isoPathLayer = dropLayer(isoPathLayer); }
 export function drawLegs(legs, tail, C = state.iso) {
   clearIsoPath();
   const parts = legLayers(legs, tail, C);
   if (parts.length) isoPathLayer = L.layerGroup(parts).addTo(map);
 }
+// przejazd: biała obwódka, linia w kolorze linii i kółka przystanków
+function rideLayers(pts, color) {
+  return [
+    routeLine(pts, { color: '#fff', weight: 9, opacity: 0.9 }),
+    routeLine(pts, { color, weight: 5 }),
+    ...pts.map(p => L.circleMarker(p, { radius: 3, weight: 2, color, fillColor: '#fff', fillOpacity: 1, interactive: false })),
+  ];
+}
+const stopLL = id => { const x = STOP_BY_ID.get(id); return x && [x.lat, x.lon]; };
 // warstwy trasy: przejazdy w kolorach linii, na wierzchu kropkowane przejścia piesze
 export function legLayers(legs, tail, C = state.iso) {
   const parts = [];
   if (tail) legs = legs.concat([{ walk: true, pts: tail }]);
   const walks = [];
   legs.forEach(l => {
-    if (l.walk && l.pts) { walks.push(l.pts); return; }
-    if (l.ride) {
-      const { key } = csaRideInfo(l, C), c = routeColor(ROUTES[key] || { type: key.split('|')[1] });
-      parts.push(L.polyline(l.pts, { color: '#fff', weight: 9, opacity: 0.9, lineJoin: 'round', interactive: false }));
-      parts.push(L.polyline(l.pts, { color: c, weight: 5, lineJoin: 'round', interactive: false }));
-      l.pts.forEach(p => parts.push(L.circleMarker(p, { radius: 3, weight: 2, color: c, fillColor: '#fff', fillOpacity: 1, interactive: false })));
-      return;
-    }
-    const a = STOP_BY_ID.get(l.prev), z = STOP_BY_ID.get(l.at);
     if (l.walk) {
-      if (a && z) walks.push([[a.lat, a.lon], [z.lat, z.lon]]);
-      return;
+      if (l.pts) walks.push(l.pts);
+      else {   // przesiadka bez geometrii: linia prosta między przystankami
+        const a = stopLL(l.prev), z = stopLL(l.at);
+        if (a && z) walks.push([a, z]);
+      }
+    } else if (l.ride) {   // przejazd z Connection Scan (tryb "wyjazd o godzinie")
+      const { key } = csaRideInfo(l, C);
+      parts.push(...rideLayers(l.pts, routeColor(ROUTES[key] || { type: key.split('|')[1] })));
+    } else {               // przejazd typowego dnia: odcinek kursu z grafu
+      const tr = isoGraph.trips[l.ti];
+      parts.push(...rideLayers(tr.s.slice(l.from, l.to + 1).map(([sid]) => stopLL(sid)), routeColor(ROUTES[tr.key])));
     }
-    const tr = isoGraph.trips[l.ti];
-    const pts = tr.s.slice(l.from, l.to + 1).map(([sid]) => { const x = STOP_BY_ID.get(sid); return [x.lat, x.lon]; });
-    const c = routeColor(ROUTES[tr.key]);
-    parts.push(L.polyline(pts, { color: '#fff', weight: 9, opacity: 0.9, lineJoin: 'round', interactive: false }));
-    parts.push(L.polyline(pts, { color: c, weight: 5, lineJoin: 'round', interactive: false }));
-    pts.forEach(p => parts.push(L.circleMarker(p, { radius: 3, weight: 2, color: c, fillColor: '#fff', fillOpacity: 1, interactive: false })));
   });
-  walks.forEach(pts => walkStyle.forEach(st => parts.push(L.polyline(pts, st))));
+  walks.forEach(pts => WALK_STYLES.forEach(st => parts.push(L.polyline(pts, st))));
   return parts;
 }
+
+// ---------------------------------------------------------------------------
+// Hover w dowolnym miejscu mapy przy zasięgu: czas, trasa i karta
+// ---------------------------------------------------------------------------
 let pointHoverLayer = null;
 let pointRaf = 0;
+// przy otwartym dymku celu karta hovera w tym samym miejscu tylko by go dublowała
+function nearTargetPop(ll) {
+  return state.target && targetPop && targetPop.isOpen()
+    && map.latLngToContainerPoint([state.target.lat, state.target.lon]).distanceTo(map.latLngToContainerPoint(ll)) < TARGET_POP_PX;
+}
+function pointCardHtml(ll, r) {
+  const { t, rides } = r, csa = state.iso.csa;
+  const head = `<b>${Math.max(1, Math.round(t))} min</b> stąd`
+    + (csa ? ` · na miejscu ${fmt(Math.round(csa.t0 + t))}` : '')
+    + (rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : '');
+  return `<div class="sh${cardPlacement(ll)}" style="--sh-c:#184f95"><div class="sh-dot" style="width:10px;height:10px"></div>
+    <div class="sh-tip sh-tip-pt wide"><div class="sh-iso" style="margin:0;padding:0;border:0">${head}</div>
+    <div class="sh-legs">${legsText(r.legs)}</div></div></div>`;
+}
 function pointHover(ll) {
-  if (!state.iso || !state.iso.walk || stopHoverOn) return hidePointHover();
-  // przy otwartym dymku celu karta hovera w tym samym miejscu tylko by go dublowała
-  if (state.target && targetPop && targetPop.isOpen()
-      && map.latLngToContainerPoint([state.target.lat, state.target.lon]).distanceTo(map.latLngToContainerPoint(ll)) < 90) return hidePointHover();
-  const r = routeTo(state.iso, ll.lat, ll.lng, 150);
+  if (!state.iso || !state.iso.walk || stopHoverOn || nearTargetPop(ll)) return hidePointHover();
+  const r = routeTo(state.iso, ll.lat, ll.lng, HOVER_SNAP_M);
   if (!r || !(r.t <= state.iso.T)) return hidePointHover();
-  const t = r.t, legs = r.legs;
-  drawLegs(legs);
-  const rides = r.rides;
-  const cp = map.latLngToContainerPoint(ll), mw = map.getSize().x;
-  const below = cp.y < 150, side = cp.x < 150 ? ' al' : cp.x > mw - 150 ? ' ar' : '';
-  const html = `<div class="sh${below ? ' below' : ''}${side}" style="--sh-c:#184f95"><div class="sh-dot" style="width:10px;height:10px"></div>
-    <div class="sh-tip sh-tip-pt wide"><div class="sh-iso" style="margin:0;padding:0;border:0"><b>${Math.max(1, Math.round(t))} min</b> stąd${state.iso.csa ? ` · na miejscu ${fmt(Math.round(state.iso.csa.t0 + t))}` : ''}${rides > 1 ? ` · ${rides - 1} ${rides - 1 === 1 ? 'przesiadka' : 'przesiadki'}` : ''}</div>
-    <div class="sh-legs">${legsText(legs)}</div></div></div>`;
-  const icon = L.divIcon({ className: '', iconSize: [0, 0], html });
+  drawLegs(r.legs);
+  const icon = htmlIcon(pointCardHtml(ll, r));
   if (pointHoverLayer) pointHoverLayer.setLatLng(ll).setIcon(icon);
-  else pointHoverLayer = L.marker(ll, { icon, interactive: false, pane: 'hover', keyboard: false }).addTo(map);
+  else pointHoverLayer = hoverMarker(ll, icon).addTo(map);
 }
-export function removePointHover() {
-  if (pointHoverLayer) { map.removeLayer(pointHoverLayer); pointHoverLayer = null; }
-}
+export function removePointHover() { pointHoverLayer = dropLayer(pointHoverLayer); }
 export function hidePointHover() {
   removePointHover();
   if (!stopHoverOn) clearIsoPath();
