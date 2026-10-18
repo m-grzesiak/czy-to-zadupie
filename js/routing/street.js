@@ -1,10 +1,8 @@
-import { state } from '../state.js';
-import { haversineMeters } from '../util.js';
 import { WALK_SPEED } from '../config.js';
 import { STOPS, STOP_INDEX } from '../data.js';
-import { WALK, edgePoints, nearestNode } from '../walk.js';
+import { WALK, bestReachableNode, edgePointsFrom, nearestNode, nodeLatLng, stopLatLng, vertexLatLng } from '../walk.js';
 import { TypedHeap } from './heap.js';
-import { isoGraph, rideSlack, tripIndex } from './transit.js';
+import { rideSlack, transitGraph, tripIndex } from './transit.js';
 import { csaLegs, csaRideInfo } from './csa.js';
 
 // Dijkstra po węzłach ulic (0..N-1) i przystankach (N..N+S-1).
@@ -13,8 +11,9 @@ import { csaLegs, csaRideInfo } from './csa.js';
 // czeka się średnio (połowa odstępu, wspólne linie). Wynik: tablice dla lepszej warstwy (time, prev…)
 // i pełne warstwy w `L` (ścieżki w walkLegsFrom).
 export function walkDijkstra(seeds, T, opts = {}) {
-  const W = WALK, N = W.N, S = STOPS.length, M = N + S;
-  const G = tripIndex(), trips = G.trips;
+  const N = WALK.N, S = STOPS.length, M = N + S;
+  const { adjStart, adjE, ends, len, nsStart, nsStop, snapNode, snapLen } = WALK;
+  const { trips, tline, bStart, bT, bP, tsi, tof } = tripIndex();
   const walkOnly = !!opts.walkOnly, noRide = !!opts.noRide;
   const NL = walkOnly || noRide ? 1 : 2, MM = NL * M;
   const time = new Float64Array(MM).fill(Infinity);   // Float64: porównanie z kolejką musi być dokładne
@@ -30,13 +29,10 @@ export function walkDijkstra(seeds, T, opts = {}) {
   };
   // wspólne linie: na przesiadce czekasz na pierwszy pojazd z linii, które dowiozą do celu (prawie) tak
   // szybko jak najszybsza, więc ich częstotliwości się sumują (np. A6 i A17 z Mietniowa do Wieliczki)
-  const { tline } = G;
   const minR = new Float64Array(S), acc = new Float64Array(S), best = new Float64Array(S);
   const vm = new Int32Array(S), gm = new Int32Array(S), touched = new Int32Array(S);
   let vs = 0, gs = 0;
   seeds.forEach(sd => { relax(sd.v, sd.t, -1, 0, 0); if (sd.noWalk) noWalk[sd.v] = 1; });
-  const { adjStart, adjE, ends, len, nsStart, nsStop, snapNode, snapLen } = W;
-  const { bStart, bT, bP, tsi, tof } = G;
   while (heap.n) {
     const x = heap.pop(), t = heap.top;
     if (t > time[x]) continue;
@@ -113,9 +109,9 @@ export function walkDijkstra(seeds, T, opts = {}) {
       }
     }
   }
-  if (NL === 1) return { time, prev, kind, via, rFrom, rTo, rWait };
-  // spłaszczenie: dla każdego wierzchołka lepsza z dwóch warstw
   const L = { time, prev, kind, via, rFrom, rTo, rWait };
+  if (NL === 1) return L;
+  // spłaszczenie: dla każdego wierzchołka lepsza z dwóch warstw
   const ct = new Float64Array(M), cp = new Int32Array(M), ck = new Int8Array(M), cv = new Int32Array(M);
   const cf = new Int16Array(M), cto = new Int16Array(M), cw = new Float32Array(M), lay = new Uint8Array(M);
   for (let v = 0; v < M; v++) {
@@ -126,66 +122,72 @@ export function walkDijkstra(seeds, T, opts = {}) {
   }
   return { time: ct, prev: cp, kind: ck, via: cv, rFrom: cf, rTo: cto, rWait: cw, L, lay, M };
 }
-// dojście z zaznaczonego punktu: walk1 (ulicami) + czasy dojścia do przystanków w okręgu
+// wierzchołek przystanku o danym id
+export const stopVertex = id => WALK.N + STOP_INDEX().get(id);
+// start z punktu: najbliższy węzeł ulicy z czasem dojścia do niego (null = daleko od sieci ulic)
+export function pointSeeds(lat, lon) {
+  const nn = nearestNode(lat, lon);
+  return nn ? [{ v: nn.node, t: nn.d / WALK_SPEED }] : null;
+}
+// węzeł ulicy przy przystanku k, jeśli wynik samego chodzenia r do niego doszedł, inaczej -1
+export function reachedSnap(r, k) {
+  const sn = WALK.snapNode[k];
+  return r && sn >= 0 && isFinite(r.time[sn]) ? sn : -1;
+}
+// etykiety przystanków osiągniętych w T (format wspólny z trybem przybliżonym);
+// origin = przystanek startowy (isStart(k, stop)), do którego nie trzeba było dojść
+export function stopLabels(res, T, isStart) {
+  const N = WALK.N, labels = new Map();
+  STOPS.forEach((st, k) => {
+    const t = res.time[N + k];
+    if (t <= T) labels.set(st.id, { t, origin: res.prev[N + k] < 0 && isStart(k, st) });
+  });
+  return labels;
+}
+// dojście z zaznaczonego punktu: walk1 (ulicami) + czasy dojścia do przystanków w okręgu (tw, też p.tw)
 export function originWalk(o, T) {
-  const W = WALK, SI = STOP_INDEX();
-  const nn = nearestNode(o.lat, o.lon);
-  const t0 = nn ? nn.d / WALK_SPEED : 0;
+  const W = WALK, SI = STOP_INDEX(), seeds = pointSeeds(o.lat, o.lon);
   // samo chodzenie liczymy do 40 min (~3 km) — dalej i tak wygrywa przejazd, a to skraca tryb czasu o ~1/4
-  const walk1 = nn ? walkDijkstra([{ v: nn.node, t: t0 }], Math.min(T, 40), { walkOnly: true }) : null;
+  const walk1 = seeds ? walkDijkstra(seeds, Math.min(T, 40), { walkOnly: true }) : null;
   const tw = new Map();
   o.poles.forEach(p => {
     const k = SI.get(p.id), sn = W.snapNode[k];
-    let t = null;
-    if (walk1 && sn >= 0) { if (isFinite(walk1.time[sn])) t = walk1.time[sn] + W.snapLen[k] / WALK_SPEED; }
-    else t = p.t0 * 1.3;
+    // bez sieci ulic przy przystanku: linia prosta × 1,3; przystanek, do którego nie da się dojść: null
+    const t = !walk1 || sn < 0 ? p.t0 * 1.3
+      : isFinite(walk1.time[sn]) ? walk1.time[sn] + W.snapLen[k] / WALK_SPEED : null;
     p.tw = t;
     if (t != null && t <= T) tw.set(k, t);
   });
-  return { walk1, tw, areaMax: Infinity };   // chodzenie z punktu bez limitu okręgu (tylko limit czasu)
+  return { walk1, tw };
 }
+// obszar dojścia pieszo z punktu (chodzenie bez limitu okręgu, tylko limit czasu) dołożony do wyniku res
 export function mergeWalkArea(res, ow) {
   const N = WALK.N, w1 = ow.walk1;
   if (!w1) return;
-  for (let v = 0; v < N; v++) if (w1.time[v] <= ow.areaMax && w1.time[v] < res.time[v]) {
+  for (let v = 0; v < N; v++) if (w1.time[v] < res.time[v]) {
     res.time[v] = w1.time[v]; res.prev[v] = w1.prev[v]; res.kind[v] = w1.kind[v]; res.via[v] = w1.via[v];
   }
 }
+// Zasięg typowego dnia po ulicach. Z punktu: jeden Dijkstra od ulicy najbliższej kliknięciu (chodzenie
+// i przejazdy naraz, bez limitu okręgu); z dala od sieci ulic start z przystanków w pobliżu (linia prosta × 1,3).
 export function runIsoWalk(o, T) {
-  const W = WALK, N = W.N, SI = STOP_INDEX();
-  let res, walk1 = null;
+  const fromPoles = f => o.poles.filter(p => f(p) <= T).map(p => ({ v: stopVertex(p.id), t: f(p) }));
+  const seeds = !o.point ? fromPoles(() => 0) : pointSeeds(o.lat, o.lon) || fromPoles(p => p.t0 * 1.3);
+  const res = walkDijkstra(seeds, T);
   const originStops = new Set(o.poles.map(p => p.id));
-  if (o.point) {
-    // jeden Dijkstra od ulicy najbliższej kliknięciu: chodzenie i przejazdy naraz, bez limitu okręgu
-    const nn = nearestNode(o.lat, o.lon);
-    if (nn) res = walkDijkstra([{ v: nn.node, t: nn.d / WALK_SPEED }], T);
-    else {   // kliknięcie z dala od sieci ulic: start z przystanków w pobliżu (linia prosta × 1,3)
-      const seeds = o.poles.filter(p => p.t0 * 1.3 <= T).map(p => ({ v: N + SI.get(p.id), t: p.t0 * 1.3 }));
-      res = walkDijkstra(seeds, T);
-    }
-  } else {
-    res = walkDijkstra(o.poles.map(p => ({ v: N + SI.get(p.id), t: 0 })), T);
-  }
-  // etykiety przystanków w formacie wspólnym z trybem przybliżonym
-  const labels = new Map();
-  STOPS.forEach((st, k) => {
-    const t = res.time[N + k];
-    if (t <= T) labels.set(st.id, { t, origin: originStops.has(st.id) && res.prev[N + k] < 0 });
-  });
-  return { labels, res, walk1 };
+  return { labels: stopLabels(res, T, (k, st) => originStops.has(st.id)), res, walk1: null };
 }
 // kolejne etapy dojazdu do przystanku (tryb ulic): piesze z geometrią ulic + przejazdy
-export function walkLegs(stopId, C = state.iso) { return walkLegsFrom(WALK.N + STOP_INDEX().get(stopId), C); }
+export function walkLegs(stopId, C) { return walkLegsFrom(stopVertex(stopId), C); }
 // Etapy dojazdu do wierzchołka v (węzeł ulicy albo przystanek): przejścia piesze z geometrią
 // ulic i czasem, przejazdy. W trybie punktu doklejamy dojście z klikniętego miejsca.
 // C = kontekst obliczenia: `iso` (mapa zasięgu) albo `reach` (dojazdy do celów), oba {o, res, walk1, csa}.
-function walkLegsFrom(v0, C = state.iso) {
-  const W = WALK, N = W.N, r0 = C.res;
+function walkLegsFrom(v0, C) {
+  const N = WALK.N, r0 = C.res;
   // wynik dwuwarstwowy (typowy dzień): idziemy po warstwach, `id` zdejmuje numer warstwy
   const LM = r0.L ? r0.M : 0, r = r0.L || r0;
   const id = x => (LM && x >= LM ? x - LM : x);
-  const P0 = x => x < N ? [W.nodes[2 * x] / 1e6, W.nodes[2 * x + 1] / 1e6] : [STOPS[x - N].lat, STOPS[x - N].lon];
-  const P = x => P0(id(x));
+  const P = x => vertexLatLng(id(x));
   const legs = [];
   let walkPts = null, walkEnd = 0;
   const addWalk = (seg, tEnd) => {
@@ -198,17 +200,16 @@ function walkLegsFrom(v0, C = state.iso) {
   while (guard++ < 50000) {
     const u = R.prev[v];
     if (u < 0) {
-      if (C.csa && id(v) >= N && R === r) {
+      const atStop = id(v) >= N && R === r;
+      if (C.csa && atStop) {
         flush(R.time[v]);
         legs.unshift(...csaLegs(id(v) - N, C));
         return legs;
       }
       if (C.o.point) {
         // przystanek startowy: dojście ulicami z punktu (walk1), potem linia prosta do kliknięcia
-        if (id(v) >= N && R === r && C.walk1) {
-          const sn = W.snapNode[id(v) - N];
-          if (sn >= 0 && isFinite(C.walk1.time[sn])) { addWalk([P(sn), P(v)], R.time[v]); R = C.walk1; v = sn; continue; }
-        }
+        const sn = atStop ? reachedSnap(C.walk1, id(v) - N) : -1;
+        if (sn >= 0) { addWalk([P(sn), P(v)], R.time[v]); R = C.walk1; v = sn; continue; }
         addWalk([[C.o.lat, C.o.lon], P(v)], R.time[v]);
         flush(0);
       } else {
@@ -219,10 +220,9 @@ function walkLegsFrom(v0, C = state.iso) {
     const k = R.kind[v];
     if (k === 3) {
       flush(R.time[v]);
-      legs.unshift({ ti: R.via[v], from: R.rFrom[v], to: R.rTo[v], wait: R.rWait ? R.rWait[v] : null });
+      legs.unshift({ ti: R.via[v], from: R.rFrom[v], to: R.rTo[v], wait: R.rWait[v] });
     } else if (k === 1) {
-      const e = R.via[v];
-      addWalk(edgePoints(e, W.ends[2 * e] !== id(u)), R.time[v]);
+      addWalk(edgePointsFrom(R.via[v], id(u)), R.time[v]);
     } else {
       addWalk([P(u), P(v)], R.time[v]);
     }
@@ -236,43 +236,25 @@ const streetPathCache = new Map();
 export function streetPath(ka, kb) {
   const key = ka + '>' + kb;
   if (streetPathCache.has(key)) return streetPathCache.get(key);
-  const W = WALK, a = W.snapNode[ka], b = W.snapNode[kb];
-  let pts = [[STOPS[ka].lat, STOPS[ka].lon], [STOPS[kb].lat, STOPS[kb].lon]];
+  const a = WALK.snapNode[ka], b = WALK.snapNode[kb];
+  let pts = [stopLatLng(ka), stopLatLng(kb)];
   if (a >= 0 && b >= 0) {
     const r = walkDijkstra([{ v: a, t: 0 }], 12, { walkOnly: true });
-    if (isFinite(r.time[b])) pts = [[STOPS[ka].lat, STOPS[ka].lon], ...chainPts(r, b), [STOPS[kb].lat, STOPS[kb].lon]];
+    if (isFinite(r.time[b])) pts = [stopLatLng(ka), ...chainPts(r, b), stopLatLng(kb)];
   }
   streetPathCache.set(key, pts);
   return pts;
 }
+// punkty ścieżki do wierzchołka v z wyniku jednowarstwowego R (np. samo chodzenie)
 export function chainPts(R, v) {
-  const W = WALK, N = W.N;
-  const P = x => x < N ? [W.nodes[2 * x] / 1e6, W.nodes[2 * x + 1] / 1e6] : [STOPS[x - N].lat, STOPS[x - N].lon];
-  let pts = [P(v)], g = 0;
+  let pts = [vertexLatLng(v)], g = 0;
   while (R.prev[v] >= 0 && g++ < 50000) {
     const u = R.prev[v];
-    const seg = R.kind[v] === 1 ? edgePoints(R.via[v], W.ends[2 * R.via[v]] !== u) : [P(u), P(v)];
+    const seg = R.kind[v] === 1 ? edgePointsFrom(R.via[v], u) : [vertexLatLng(u), vertexLatLng(v)];
     pts = seg.concat(pts.slice(1));
     v = u;
   }
   return pts;
-}
-// najszybciej osiągalny węzeł w promieniu R: czas dojścia do węzła + dojście od niego do punktu
-function bestReachableNode(lat, lon, R, t = state.iso.res.time) {
-  const W = WALK, cy = Math.floor(lat / W.GC), cx = Math.floor(lon / W.GC);
-  let best = null;
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-    const list = W.grid.get((cy + dy) + ',' + (cx + dx));
-    if (!list) continue;
-    for (const i of list) {
-      if (!isFinite(t[i])) continue;
-      const d = haversineMeters(lat, lon, W.nodes[2 * i] / 1e6, W.nodes[2 * i + 1] / 1e6);
-      if (d > R) continue;
-      const tt = t[i] + d / WALK_SPEED;
-      if (!best || tt < best.t) best = { node: i, d, t: tt };
-    }
-  }
-  return best;
 }
 // Trasa z miejsca startu kontekstu C do dowolnego punktu: czas, etapy (z dojściem do samego punktu), linie
 export function routeTo(C, lat, lon, R = 200) {
@@ -281,16 +263,13 @@ export function routeTo(C, lat, lon, R = 200) {
   if (!nn) return { t: Infinity };
   const legs = walkLegsFrom(nn.node, C);
   if (nn.d > 3) {   // ostatnie metry do punktu doliczamy do ostatniego przejścia
-    const end = [lat, lon], last = legs[legs.length - 1];
-    if (last && last.walk && last.pts) { last.pts = last.pts.concat([end]); last.min += nn.d / WALK_SPEED; }
-    else legs.push({ walk: true, pts: [[WALK.nodes[2 * nn.node] / 1e6, WALK.nodes[2 * nn.node + 1] / 1e6], end], min: nn.d / WALK_SPEED });
+    const end = [lat, lon], last = legs[legs.length - 1], min = nn.d / WALK_SPEED;
+    if (last && last.walk && last.pts) { last.pts = last.pts.concat([end]); last.min += min; }
+    else legs.push({ walk: true, pts: [nodeLatLng(nn.node), end], min });
   }
-  const lines = [];
-  legs.forEach(l => {
-    if (l.walk) return;
-    const key = l.ride ? csaRideInfo(l, C).key : isoGraph.trips[l.ti].key;
-    const [ref, type] = key.split('|');
-    lines.push({ ref, type });
+  const lines = legs.filter(l => !l.walk).map(l => {
+    const [ref, type] = (l.ride ? csaRideInfo(l, C).key : transitGraph().trips[l.ti].key).split('|');
+    return { ref, type };
   });
   const walkMin = legs.filter(l => l.walk).reduce((a, l) => a + (l.min || 0), 0);
   return { t: nn.t, legs, lines, rides: lines.length, walkMin };

@@ -1,14 +1,11 @@
 import { state } from '../state.js';
 import { TRANSFER_MIN, WALK_SPEED } from '../config.js';
 import { META, STOPS, STOP_INDEX, profileFor } from '../data.js';
-import { WALK } from '../walk.js';
-import { chainPts, mergeWalkArea, originWalk, streetPath, walkDijkstra } from './street.js';
+import { WALK, stopLatLng } from '../walk.js';
+import { chainPts, mergeWalkArea, originWalk, reachedSnap, stopLabels, streetPath, walkDijkstra } from './street.js';
 
-         // zapas na przesiadkę z pojazdu na pojazd (min)
-let TRANSFERS = null;
-           // przesiadki piesze między przystankami (transfers.bin)
-const connCache = new Map();
-    // "p_chunk" -> Promise<Uint16Array>
+let TRANSFERS = null;   // przesiadki piesze między przystankami (transfers.bin): null = nie wczytano, false = brak
+const connCache = new Map();   // "p<P>_<okno>" -> Promise<Uint16Array>
 
 async function loadTransfers() {
   if (TRANSFERS !== null) return TRANSFERS;
@@ -33,6 +30,8 @@ function loadConnFile(name) {
   return connCache.get(name);
 }
 export const timeModeAvailable = () => !!(META && META.conns && META.walk && META.walk.transfers);
+// Connection Scan od t0 przez T min. Na przystanku k: arr = przyjazd, pk = jak dotarto (1 = start,
+// 2 = przejazd kursem pa z przystanku pb, odjazd pd; 3 = przesiadka pieszo z przystanku pa)
 async function runCSA(o, ow, dateISO, t0, T) {
   const prof = profileFor(dateISO);
   if (!prof) return null;
@@ -54,9 +53,13 @@ async function runCSA(o, ow, dateISO, t0, T) {
     }
   };
   // start: przystanek (0 min, można przejść na sąsiedni słupek) albo przystanki z okręgu (dojście ulicami)
-  if (o.point) ow.tw.forEach((t, k) => { arr[k] = t0 + t; board[k] = arr[k]; pk[k] = 1; });
-  else o.poles.forEach(p => { const k = SI.get(p.id); arr[k] = t0; board[k] = t0; pk[k] = 1; });
-  if (!o.point) o.poles.forEach(p => foot(SI.get(p.id), t0));
+  const start = (k, t) => { arr[k] = t; board[k] = t; pk[k] = 1; };
+  if (o.point) ow.tw.forEach((t, k) => start(k, t0 + t));
+  else {
+    const ks = o.poles.map(p => SI.get(p.id));
+    ks.forEach(k => start(k, t0));
+    ks.forEach(k => foot(k, t0));
+  }
   const tEnd = t0 + T;
   for (const C of chunks) {
     for (let i = 0; i < C.length; i += 5) {
@@ -77,30 +80,24 @@ async function runCSA(o, ow, dateISO, t0, T) {
   return { P, approx: prof.approx, t0, arr, pk, pa, pb, pd, tripsTab, chunks };
 }
 export async function runIsoTime(o, T, dateISO, t0) {
-  const N = WALK.N, SI = STOP_INDEX();
   const ow = o.point ? originWalk(o, T) : null;
   const csa = await runCSA(o, ow, dateISO, t0, T);
   if (!csa) return null;
-  const seeds = [];
-  STOPS.forEach((st, k) => {
+  // obszar: samo chodzenie od osiągniętych przystanków (od startowych z punktu już doszliśmy ulicami)
+  const N = WALK.N, S = STOPS.length, seeds = [];
+  for (let k = 0; k < S; k++) {
     const rel = csa.arr[k] - t0;
     if (rel <= T) seeds.push({ v: N + k, t: rel, noWalk: o.point && csa.pk[k] === 1 });
-  });
+  }
   const res = walkDijkstra(seeds, T, { noRide: true });
   if (ow) mergeWalkArea(res, ow);
-  const labels = new Map();
+  const labels = stopLabels(res, T, k => csa.pk[k] === 1);
   let rides = 0;
-  STOPS.forEach((st, k) => {
-    const t = res.time[N + k];
-    if (t <= T) {
-      labels.set(st.id, { t, origin: csa.pk[k] === 1 && res.prev[N + k] < 0 });
-      if (csa.pk[k] === 2) rides++;
-    }
-  });
+  for (let k = 0; k < S; k++) if (csa.pk[k] === 2 && res.time[N + k] <= T) rides++;
   return { labels, res, walk1: ow && ow.walk1, csa, rides };
 }
 // etapy przed przystankiem k w trybie "wyjazd o godzinie": przejazdy i przesiadki piesze
-export function csaLegs(k, X = state.iso) {
+export function csaLegs(k, X) {
   const C = X.csa, out = [];
   let g = 0;
   while (g++ < 60) {
@@ -115,10 +112,8 @@ export function csaLegs(k, X = state.iso) {
       k = f;
     } else {
       if (X.o.point) {
-        const sn = WALK.snapNode[k];
-        const pts = X.walk1 && sn >= 0 && isFinite(X.walk1.time[sn]) ? chainPts(X.walk1, sn) : [[X.o.lat, X.o.lon]];
-        pts.unshift([X.o.lat, X.o.lon]);
-        pts.push([STOPS[k].lat, STOPS[k].lon]);
+        const sn = reachedSnap(X.walk1, k), o = [X.o.lat, X.o.lon];
+        const pts = [o, ...(sn >= 0 ? chainPts(X.walk1, sn) : [o]), stopLatLng(k)];
         out.unshift({ walk: true, pts, min: C.arr[k] - C.t0 });
       }
       break;
@@ -127,13 +122,13 @@ export function csaLegs(k, X = state.iso) {
   return out;
 }
 export function csaRideInfo(l, X = state.iso) {
-  const C = X.csa, key = META.conns.routes[C.tripsTab[2 * l.ti]], head = META.conns.heads[C.tripsTab[2 * l.ti + 1]];
+  const C = X.csa, key = META.conns.routes[C.tripsTab[2 * l.ti]];
   if (!l.pts) {   // przystanki pośrednie z połączeń tego kursu
     const seq = [l.from];
     for (const ch of C.chunks) for (let i = 0; i < ch.length; i += 5) {
       if (ch[i + 4] === l.ti && ch[i + 2] >= l.dep && ch[i + 3] <= l.arr) seq.push(ch[i + 1]);
     }
-    l.pts = [...new Set(seq)].map(k => [STOPS[k].lat, STOPS[k].lon]);
+    l.pts = [...new Set(seq)].map(stopLatLng);
   }
-  return { key, head };
+  return { key };
 }
